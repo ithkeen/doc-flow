@@ -4,6 +4,7 @@ from pathlib import Path
 from langchain.tools import tool
 
 from src.tools.utils import fail, ok
+from src.config import settings
 from src.logs import get_logger
 
 logger = get_logger(__name__)
@@ -23,7 +24,7 @@ def git_diff(repo_path: str) -> str:
     Returns:
         JSON envelope，payload 为变更文件列表。
     """
-    repo = Path(repo_path)
+    repo = Path(settings.agent_work_dir) / repo_path
 
     if not (repo / ".git").exists():
         logger.error("Git diff 失败：%s 不是 Git 仓库", repo_path)
@@ -42,7 +43,7 @@ def git_diff(repo_path: str) -> str:
     try:
         result = subprocess.run(
             ["git", "diff", "--name-status", f"{last_commit}..HEAD"],
-            cwd=repo_path,
+            cwd=str(repo),
             capture_output=True,
             text=True,
             timeout=GIT_TIMEOUT_SECONDS,
