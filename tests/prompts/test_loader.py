@@ -85,3 +85,21 @@ class TestLoadPromptNotFound:
     def test_raises_file_not_found_error(self, prompts_dir):
         with pytest.raises(FileNotFoundError, match="提示词模板不存在"):
             load_prompt("nonexistent", prompts_dir=prompts_dir)
+
+
+class TestLoadBundledTemplates:
+    """验证项目自带的模板文件可正常加载。"""
+
+    def test_load_intent_prompt(self):
+        result = load_prompt("intent")
+
+        assert isinstance(result, ChatPromptTemplate)
+        messages = result.format_messages(intent_list="1. 生成文档", user_input="帮我生成文档")
+        assert len(messages) == 2
+        assert messages[0].type == "system"
+        assert messages[1].type == "human"
+
+    def test_load_doc_gen_prompt(self):
+        result = load_prompt("doc_gen")
+
+        assert isinstance(result, ChatPromptTemplate)
