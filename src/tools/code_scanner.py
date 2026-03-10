@@ -2,6 +2,7 @@ from pathlib import Path
 
 from langchain.tools import tool
 
+from src.config import settings
 from src.logs import get_logger
 from src.tools.utils import fail, ok
 
@@ -20,7 +21,7 @@ def scan_directory(directory_path: str) -> str:
         JSON envelope，payload 为该目录下所有 .go 文件的路径列表
         （排除 _test.go 测试文件），每个文件一行。
     """
-    dir_path = Path(directory_path)
+    dir_path = Path(settings.agent_work_dir) / directory_path
 
     if not dir_path.exists():
         logger.error("扫描失败：目录 %s 不存在", directory_path)
