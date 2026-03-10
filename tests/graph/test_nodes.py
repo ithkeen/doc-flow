@@ -104,3 +104,83 @@ class TestIntentRecognize:
 
         assert result["intent"] == "unknown"
         assert result["confidence"] == 0.0
+
+
+class TestDocGen:
+    """文档生成节点测试。"""
+
+    @patch("src.graph.nodes.ChatOpenAI")
+    def test_returns_messages_with_ai_response(self, mock_chat_cls):
+        from src.graph.nodes import doc_gen
+
+        mock_llm = MagicMock()
+        mock_llm_with_tools = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm_with_tools
+
+        ai_msg = AIMessage(content="已为您生成文档。")
+        mock_llm_with_tools.invoke.return_value = ai_msg
+        mock_chat_cls.return_value = mock_llm
+
+        state = {
+            "messages": [HumanMessage(content="请为 ./handler 生成文档")],
+            "intent": "doc_gen",
+            "confidence": 0.95,
+            "params": {"directory_path": "./handler"},
+        }
+
+        result = doc_gen(state)
+
+        assert "messages" in result
+        assert result["messages"] == [ai_msg]
+
+    @patch("src.graph.nodes.ChatOpenAI")
+    def test_binds_tools_to_llm(self, mock_chat_cls):
+        from src.graph.nodes import doc_gen
+
+        mock_llm = MagicMock()
+        mock_llm_with_tools = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm_with_tools
+        mock_llm_with_tools.invoke.return_value = AIMessage(content="done")
+        mock_chat_cls.return_value = mock_llm
+
+        state = {
+            "messages": [HumanMessage(content="生成文档")],
+            "intent": "doc_gen",
+            "confidence": 0.95,
+            "params": {"directory_path": "./handler"},
+        }
+
+        doc_gen(state)
+
+        mock_llm.bind_tools.assert_called_once()
+        tools_arg = mock_llm.bind_tools.call_args[0][0]
+        tool_names = [t.name for t in tools_arg]
+        assert "scan_directory" in tool_names
+        assert "read_file" in tool_names
+        assert "save_document" in tool_names
+        assert "read_document" in tool_names
+        assert "list_documents" in tool_names
+
+    @patch("src.graph.nodes.ChatOpenAI")
+    def test_prepends_system_prompt_to_messages(self, mock_chat_cls):
+        from src.graph.nodes import doc_gen
+
+        mock_llm = MagicMock()
+        mock_llm_with_tools = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm_with_tools
+        mock_llm_with_tools.invoke.return_value = AIMessage(content="done")
+        mock_chat_cls.return_value = mock_llm
+
+        human_msg = HumanMessage(content="生成文档")
+        state = {
+            "messages": [human_msg],
+            "intent": "doc_gen",
+            "confidence": 0.95,
+            "params": {"directory_path": "./handler"},
+        }
+
+        doc_gen(state)
+
+        invoke_args = mock_llm_with_tools.invoke.call_args[0][0]
+        assert invoke_args[0].type == "system"
+        assert invoke_args[-1] == human_msg

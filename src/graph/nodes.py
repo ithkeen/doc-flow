@@ -64,3 +64,35 @@ def intent_recognize(state: State) -> dict:
 
     logger.info("意图识别完成：intent=%s, confidence=%.2f", intent, confidence)
     return {"intent": intent, "confidence": confidence, "params": params}
+
+
+from src.tools.code_scanner import scan_directory
+from src.tools.file_reader import read_file
+from src.tools.doc_storage import save_document, read_document, list_documents
+
+TOOLS = [scan_directory, read_file, save_document, read_document, list_documents]
+
+
+def doc_gen(state: State) -> dict:
+    """文档生成节点。
+
+    使用 doc_gen 提示词和绑定工具的 LLM 生成文档。
+    与 ToolNode 形成 ReAct 循环。
+    """
+    prompt = load_prompt("doc_gen")
+    directory_path = state["params"].get("directory_path", "")
+
+    system_messages = prompt.format_messages(directory_path=directory_path)
+
+    llm = ChatOpenAI(
+        base_url=settings.llm.base_url,
+        api_key=settings.llm.api_key,
+        model=settings.llm.model,
+    )
+    llm_with_tools = llm.bind_tools(TOOLS)
+
+    all_messages = system_messages + state["messages"]
+    response = llm_with_tools.invoke(all_messages)
+
+    logger.info("文档生成节点调用完成")
+    return {"messages": [response]}

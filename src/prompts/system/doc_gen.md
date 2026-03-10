@@ -5,7 +5,7 @@
 你可以使用以下工具：
 - scan_directory(directory_path: str): 递归扫描指定目录下的 Go 源代码文件（排除 *_test.go 测试文件），返回编号文件列表
 - read_file(file_path: str): 读取指定文件的完整内容（超过 100KB 会截断），支持 UTF-8 和 latin-1 编码
-- save_document(module_name: str, api_name: str, content: str): 将生成的 Markdown 文档保存到 docs/{module_name}/{api_name}.md
+- save_document(module_name: str, api_name: str, content: str): 将生成的 Markdown 文档保存到 docs/{{module_name}}/{{api_name}}.md
 - read_document(module_name: str, api_name: str): 读取已有的文档内容，用于检查或更新
 - list_documents(module_name: str | None): 列出已有文档，可按模块筛选或列出全部
 
