@@ -2,6 +2,7 @@ from pathlib import Path
 
 from langchain.tools import tool
 
+from src.config import settings
 from src.logs import get_logger
 from src.tools.utils import fail, ok
 
@@ -23,7 +24,7 @@ def read_file(file_path: str) -> str:
     Returns:
         JSON envelope，payload 为文件的完整文本内容。
     """
-    path = Path(file_path)
+    path = Path(settings.agent_work_dir) / file_path
 
     if not path.exists():
         logger.error("文件读取失败：%s 不存在", file_path)
