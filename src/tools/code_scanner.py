@@ -2,7 +2,10 @@ from pathlib import Path
 
 from langchain.tools import tool
 
-from utils import fail, ok
+from src.logs import get_logger
+from src.tools.utils import fail, ok
+
+logger = get_logger(__name__)
 
 
 @tool
@@ -20,9 +23,11 @@ def scan_directory(directory_path: str) -> str:
     dir_path = Path(directory_path)
 
     if not dir_path.exists():
+        logger.error("目录 %s 不存在", directory_path)
         return fail(f"目录 {directory_path} 不存在，请确认路径是否正确")
 
     if not dir_path.is_dir():
+        logger.error("%s 不是一个目录", directory_path)
         return fail(f"{directory_path} 不是一个目录")
 
     go_files = sorted(
@@ -33,4 +38,5 @@ def scan_directory(directory_path: str) -> str:
         return ok("该目录下未发现 Go 源文件（已排除 _test.go 测试文件）")
 
     file_list = "\n".join(f"{i}. {f}" for i, f in enumerate(go_files, 1))
+    logger.info("扫描目录 %s 找到 %d 个 Go 源文件", directory_path, len(go_files))
     return ok(f"找到 {len(go_files)} 个 Go 源文件", payload=file_list)
