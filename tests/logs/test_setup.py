@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
