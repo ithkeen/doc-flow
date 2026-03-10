@@ -103,3 +103,12 @@ class TestLoadBundledTemplates:
         result = load_prompt("doc_gen")
 
         assert isinstance(result, ChatPromptTemplate)
+
+
+class TestModuleExport:
+    """验证模块导出。"""
+
+    def test_load_prompt_importable_from_package(self):
+        from src.prompts import load_prompt as fn
+
+        assert callable(fn)
