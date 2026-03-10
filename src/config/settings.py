@@ -72,6 +72,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    agent_work_dir: str = "."
     docs_output_dir: str = "./docs"
     llm: LLMSettings = Field(default_factory=LLMSettings)
     langsmith: LangSmithSettings = Field(default_factory=LangSmithSettings)
