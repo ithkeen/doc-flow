@@ -5,6 +5,7 @@ import json
 import pytest
 
 from src.config import settings
+from src.config.settings import Settings
 from src.tools.code_scanner import scan_directory
 
 
@@ -43,3 +44,23 @@ class TestScanDirectory:
         result = json.loads(scan_directory.invoke({"directory_path": "subdir"}))
         assert result["success"] is True
         assert "未发现" in result["message"]
+
+
+class TestScanDirectoryIntegration:
+    """集成测试：使用真实 .env 配置，不 mock，直接扫描并打印结果。"""
+
+    def test_scan_real_directory(self):
+        s = Settings()
+        print(f"\n========== code_scanner 集成测试 ==========")
+        print(f"AGENT_WORK_DIR: {s.agent_work_dir}")
+        print(f"扫描目录: .")
+
+        result = json.loads(scan_directory.invoke({"directory_path": "ubill-order"}))
+
+        print(f"success: {result['success']}")
+        print(f"message: {result['message']}")
+        if result.get("payload"):
+            print(f"payload:\n{result['payload']}")
+        else:
+            print("payload: (empty)")
+        print("===========================================")

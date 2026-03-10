@@ -5,6 +5,7 @@ import json
 import pytest
 
 from src.config import settings
+from src.config.settings import Settings
 from src.tools.file_reader import read_file
 
 
@@ -50,3 +51,28 @@ class TestReadFile:
         result = json.loads(read_file.invoke({"file_path": "big.go"}))
         assert result["success"] is True
         assert "截取" in result["message"]
+
+
+class TestReadFileIntegration:
+    """集成测试：使用真实 .env 配置，不 mock，直接读取文件并打印结果。"""
+
+    def test_read_real_file(self):
+        s = Settings()
+        file_path = "ubill-order/main.go"
+
+        print(f"\n========== file_reader 集成测试 ==========")
+        print(f"AGENT_WORK_DIR: {s.agent_work_dir}")
+        print(f"读取文件: {file_path}")
+
+        result = json.loads(read_file.invoke({"file_path": file_path}))
+
+        print(f"success: {result['success']}")
+        print(f"message: {result['message']}")
+        if result.get("payload"):
+            preview = result["payload"][:500]
+            print(f"payload (前500字符):\n{preview}")
+            if len(result["payload"]) > 500:
+                print(f"... (共 {len(result['payload'])} 字符)")
+        else:
+            print("payload: (empty)")
+        print("===========================================")
