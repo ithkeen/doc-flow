@@ -3,12 +3,11 @@ from pathlib import Path
 
 from langchain.tools import tool
 
+from src.config import settings
 from src.logs import get_logger
 from src.tools.utils import fail, ok
 
 logger = get_logger(__name__)
-
-DOCS_BASE_DIR = "docs"
 
 _MODULE_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -23,8 +22,8 @@ def _validate_module_name(module_name: str) -> str | None:
 
 
 def _get_doc_path(module_name: str, api_name: str) -> Path:
-    """构建文档文件路径：docs/{module_name}/{api_name}.md"""
-    return Path(DOCS_BASE_DIR) / module_name / f"{api_name}.md"
+    """构建文档文件路径：{docs_output_dir}/{module_name}/{api_name}.md"""
+    return Path(settings.docs_output_dir) / module_name / f"{api_name}.md"
 
 
 @tool
@@ -113,7 +112,7 @@ def list_documents(module_name: str | None = None) -> str:
     Returns:
         JSON envelope，payload 为文档文件列表（按模块分组）。
     """
-    base = Path(DOCS_BASE_DIR)
+    base = Path(settings.docs_output_dir)
 
     if not base.exists():
         if module_name:
