@@ -1,8 +1,5 @@
 """LogSettings 单元测试。"""
 
-import pytest
-from pydantic import ValidationError
-
 from src.config.settings import LogSettings, Settings
 
 
