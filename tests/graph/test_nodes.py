@@ -184,3 +184,46 @@ class TestDocGen:
         invoke_args = mock_llm_with_tools.invoke.call_args[0][0]
         assert invoke_args[0].type == "system"
         assert invoke_args[-1] == human_msg
+
+
+class TestRouteByIntent:
+    """意图路由函数测试。"""
+
+    def test_routes_to_doc_gen_for_doc_gen_intent(self):
+        from src.graph.nodes import route_by_intent
+
+        state = {"intent": "doc_gen", "confidence": 0.9, "params": {}, "messages": []}
+        assert route_by_intent(state) == "doc_gen"
+
+    def test_routes_to_end_for_unknown_intent(self):
+        from src.graph.nodes import route_by_intent
+        from langgraph.graph import END
+
+        state = {"intent": "unknown", "confidence": 0.3, "params": {}, "messages": []}
+        assert route_by_intent(state) == END
+
+    def test_routes_to_end_for_empty_intent(self):
+        from src.graph.nodes import route_by_intent
+        from langgraph.graph import END
+
+        state = {"intent": "", "confidence": 0.0, "params": {}, "messages": []}
+        assert route_by_intent(state) == END
+
+
+class TestRouteDocGen:
+    """doc_gen 路由函数测试。"""
+
+    def test_routes_to_tools_when_tool_calls_present(self):
+        from src.graph.nodes import route_doc_gen
+
+        ai_msg = AIMessage(content="", tool_calls=[{"name": "scan_directory", "args": {"directory_path": "./handler"}, "id": "1"}])
+        state = {"messages": [ai_msg], "intent": "doc_gen", "confidence": 0.9, "params": {}}
+        assert route_doc_gen(state) == "tools"
+
+    def test_routes_to_end_when_no_tool_calls(self):
+        from src.graph.nodes import route_doc_gen
+        from langgraph.graph import END
+
+        ai_msg = AIMessage(content="文档生成完毕。")
+        state = {"messages": [ai_msg], "intent": "doc_gen", "confidence": 0.9, "params": {}}
+        assert route_doc_gen(state) == END

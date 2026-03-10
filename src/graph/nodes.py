@@ -10,6 +10,7 @@ from typing import Annotated
 
 from langchain_openai import ChatOpenAI
 from typing_extensions import TypedDict
+from langgraph.graph import END
 from langgraph.graph.message import add_messages
 
 from src.config import settings
@@ -96,3 +97,18 @@ def doc_gen(state: State) -> dict:
 
     logger.info("文档生成节点调用完成")
     return {"messages": [response]}
+
+
+def route_by_intent(state: State) -> str:
+    """根据意图识别结果路由到对应节点。"""
+    if state["intent"] == "doc_gen":
+        return "doc_gen"
+    return END
+
+
+def route_doc_gen(state: State) -> str:
+    """根据 LLM 是否发起工具调用决定下一步。"""
+    last_message = state["messages"][-1]
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        return "tools"
+    return END
