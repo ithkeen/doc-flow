@@ -3,7 +3,10 @@ from pathlib import Path
 
 from langchain.tools import tool
 
-from utils import fail, ok
+from src.logs import get_logger
+from src.tools.utils import fail, ok
+
+logger = get_logger(__name__)
 
 DOCS_BASE_DIR = "docs"
 
@@ -38,12 +41,15 @@ def save_document(module_name: str, api_name: str, content: str) -> str:
         JSON envelope，payload 为保存的文件路径。
     """
     if not api_name:
+        logger.error("文档保存失败：接口名称为空")
         return fail("接口名称不能为空")
     if not content:
+        logger.error("文档保存失败：文档内容为空")
         return fail("文档内容不能为空")
 
     error = _validate_module_name(module_name)
     if error:
+        logger.error("文档保存失败：%s", error)
         return fail(error)
 
     doc_path = _get_doc_path(module_name, api_name)
@@ -52,8 +58,10 @@ def save_document(module_name: str, api_name: str, content: str) -> str:
         doc_path.parent.mkdir(parents=True, exist_ok=True)
         doc_path.write_text(content, encoding="utf-8")
     except Exception as e:
+        logger.error("文档保存异常：%s/%s - %s", module_name, api_name, e, exc_info=True)
         return fail(f"文档保存失败 - {e}")
 
+    logger.info("文档已保存：%s/%s -> %s", module_name, api_name, doc_path)
     return ok(f"文档已保存到 {doc_path}", payload=str(doc_path))
 
 
@@ -70,22 +78,27 @@ def read_document(module_name: str, api_name: str) -> str:
         JSON envelope，payload 为文档的 Markdown 内容。
     """
     if not api_name:
+        logger.error("文档读取失败：接口名称为空")
         return fail("接口名称不能为空")
 
     error = _validate_module_name(module_name)
     if error:
+        logger.error("文档读取失败：%s", error)
         return fail(error)
 
     doc_path = _get_doc_path(module_name, api_name)
 
     if not doc_path.exists():
+        logger.error("文档读取失败：%s/%s 文档不存在", module_name, api_name)
         return fail("该接口的文档尚未生成")
 
     try:
         content = doc_path.read_text(encoding="utf-8")
     except Exception as e:
+        logger.error("文档读取异常：%s/%s - %s", module_name, api_name, e, exc_info=True)
         return fail(f"文档读取失败 - {e}")
 
+    logger.info("文档已读取：%s/%s", module_name, api_name)
     return ok(f"已读取 {module_name}/{api_name} 的文档", payload=content)
 
 
@@ -110,17 +123,21 @@ def list_documents(module_name: str | None = None) -> str:
     if module_name:
         error = _validate_module_name(module_name)
         if error:
+            logger.error("文档列表查询失败：%s", error)
             return fail(error)
 
         module_dir = base / module_name
         if not module_dir.exists() or not module_dir.is_dir():
+            logger.info("文档列表查询：模块 %s 下没有文档", module_name)
             return ok(f"模块 {module_name} 下没有已生成的文档")
 
         md_files = sorted(f.name for f in module_dir.iterdir() if f.suffix == ".md")
         if not md_files:
+            logger.info("文档列表查询：模块 %s 下没有文档", module_name)
             return ok(f"模块 {module_name} 下没有已生成的文档")
 
         listing = f"{module_name} 模块：\n" + "\n".join(f"  - {name}" for name in md_files)
+        logger.info("文档列表查询：模块 %s 下有 %d 个文档", module_name, len(md_files))
         return ok(f"模块 {module_name} 下有 {len(md_files)} 个文档", payload=listing)
 
     # List all modules
@@ -143,4 +160,5 @@ def list_documents(module_name: str | None = None) -> str:
             lines.append(f"  - {name}")
         total += len(files)
 
+    logger.info("文档列表查询：共有 %d 个文档，分布在 %d 个模块", total, len(modules))
     return ok(f"共有 {total} 个文档，分布在 {len(modules)} 个模块", payload="\n".join(lines))
