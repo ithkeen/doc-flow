@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from langchain_core.tools import tool
+from langchain.tools import tool
 
-from .utils import fail, ok
+from utils import fail, ok
 
 MAX_FILE_SIZE_KB = 100
 

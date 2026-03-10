@@ -1,9 +1,9 @@
 import subprocess
 from pathlib import Path
 
-from langchain_core.tools import tool
+from langchain.tools import tool
 
-from .utils import fail, ok
+from utils import fail, ok
 
 LAST_COMMIT_FILE = ".last_commit"
 GIT_TIMEOUT_SECONDS = 30

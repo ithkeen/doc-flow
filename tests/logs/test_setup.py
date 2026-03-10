@@ -102,3 +102,23 @@ class TestSetupLogging:
             h for h in root.handlers if isinstance(h, TimedRotatingFileHandler)
         ]
         assert len(file_handlers) == 1
+
+
+class TestManualVerification:
+    """手动验证测试，输出到项目 logs/ 目录，用于人工对比确认。"""
+
+    def test_print_log_output(self):
+        config = LogSettings(_env_file=None)
+        setup_logging(config)
+
+        logger = logging.getLogger("test.manual")
+        logger.info("Hello Log!")
+
+        log_file = Path(config.dir) / "app.log"
+        content = log_file.read_text().strip()
+
+        print("\n========== 日志文件路径 ==========")
+        print(log_file.resolve())
+        print("========== 日志文件内容 ==========")
+        print(content)
+        print("==================================")
