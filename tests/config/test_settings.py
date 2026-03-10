@@ -84,6 +84,20 @@ class TestSettings:
         with pytest.raises(ValidationError):
             Settings(_env_file=None)
 
+    def test_agent_work_dir_default(self, monkeypatch):
+        monkeypatch.setenv("LLM_API_KEY", "test-key")
+        monkeypatch.delenv("AGENT_WORK_DIR", raising=False)
+
+        s = Settings(_env_file=None)
+        assert s.agent_work_dir == "."
+
+    def test_agent_work_dir_from_env(self, monkeypatch):
+        monkeypatch.setenv("LLM_API_KEY", "test-key")
+        monkeypatch.setenv("AGENT_WORK_DIR", "/home/user/go-project")
+
+        s = Settings(_env_file=None)
+        assert s.agent_work_dir == "/home/user/go-project"
+
 
 class TestSettingsSingleton:
     """Singleton 导入测试。"""
