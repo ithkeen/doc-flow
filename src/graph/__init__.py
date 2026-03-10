@@ -10,4 +10,6 @@ Usage::
     result = graph.invoke({"messages": [("human", "请为 ./handler 生成文档")]})
 """
 
-__all__: list[str] = []
+from src.graph.graph import build_graph
+
+__all__ = ["build_graph"]
