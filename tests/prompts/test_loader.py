@@ -1,7 +1,5 @@
 """load_prompt 单元测试。"""
 
-from pathlib import Path
-
 import pytest
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -51,3 +49,39 @@ class TestLoadPromptBothTemplates:
 
         assert messages[0].content == "你是助手。"
         assert messages[1].content == "用户输入：你好"
+
+
+class TestLoadPromptSystemOnly:
+    """仅 system 模板存在。"""
+
+    def test_returns_system_message_only(self, prompts_dir):
+        (prompts_dir / "system" / "react_node.md").write_text("你是 ReAct agent。", encoding="utf-8")
+
+        result = load_prompt("react_node", prompts_dir=prompts_dir)
+        messages = result.format_messages()
+
+        assert len(messages) == 1
+        assert messages[0].type == "system"
+        assert messages[0].content == "你是 ReAct agent。"
+
+
+class TestLoadPromptUserOnly:
+    """仅 user 模板存在。"""
+
+    def test_returns_human_message_only(self, prompts_dir):
+        (prompts_dir / "user" / "simple_node.md").write_text("请处理：{task}", encoding="utf-8")
+
+        result = load_prompt("simple_node", prompts_dir=prompts_dir)
+        messages = result.format_messages(task="分析代码")
+
+        assert len(messages) == 1
+        assert messages[0].type == "human"
+        assert messages[0].content == "请处理：分析代码"
+
+
+class TestLoadPromptNotFound:
+    """system 和 user 模板均不存在。"""
+
+    def test_raises_file_not_found_error(self, prompts_dir):
+        with pytest.raises(FileNotFoundError, match="提示词模板不存在"):
+            load_prompt("nonexistent", prompts_dir=prompts_dir)
