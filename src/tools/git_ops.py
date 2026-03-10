@@ -3,7 +3,10 @@ from pathlib import Path
 
 from langchain.tools import tool
 
-from utils import fail, ok
+from src.tools.utils import fail, ok
+from src.logs import get_logger
+
+logger = get_logger(__name__)
 
 LAST_COMMIT_FILE = ".last_commit"
 GIT_TIMEOUT_SECONDS = 30
@@ -23,14 +26,17 @@ def git_diff(repo_path: str) -> str:
     repo = Path(repo_path)
 
     if not (repo / ".git").exists():
+        logger.error("Git diff 失败：%s 不是 Git 仓库", repo_path)
         return fail(f"{repo_path} 不是 Git 仓库")
 
     last_commit_path = repo / LAST_COMMIT_FILE
     if not last_commit_path.exists():
+        logger.error("Git diff 失败：%s 不存在", last_commit_path)
         return fail("这是首次执行增量检测，没有历史 commit 记录作为基准")
 
     last_commit = last_commit_path.read_text(encoding="utf-8").strip()
     if not last_commit:
+        logger.error("Git diff 失败：%s 内容为空", last_commit_path)
         return fail("这是首次执行增量检测，没有历史 commit 记录作为基准")
 
     try:
@@ -42,11 +48,14 @@ def git_diff(repo_path: str) -> str:
             timeout=GIT_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
+        logger.error("Git diff 超时：%s（%d秒）", repo_path, GIT_TIMEOUT_SECONDS)
         return fail(f"Git 操作超时（{GIT_TIMEOUT_SECONDS}秒）")
     except FileNotFoundError:
+        logger.error("Git diff 失败：未找到 git 命令")
         return fail("未找到 git 命令，请确认已安装 Git")
 
     if result.returncode != 0:
+        logger.error("Git diff 失败：returncode=%d, stderr=%s", result.returncode, result.stderr.strip())
         return fail(f"Git 操作失败 - {result.stderr.strip()}")
 
     output = result.stdout.strip()
@@ -66,4 +75,5 @@ def git_diff(repo_path: str) -> str:
             lines.append(f"  [{status_label}] {filepath}")
 
     change_list = "\n".join(lines)
+    logger.info("Git diff 完成：%s 检测到 %d 个文件变更", repo_path, len(lines))
     return ok(f"检测到 {len(lines)} 个文件变更", payload=change_list)
