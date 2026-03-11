@@ -4,6 +4,7 @@ import pytest
 from typing import get_type_hints, Annotated
 from unittest.mock import MagicMock, patch
 from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.runnables import RunnableConfig
 
 
 class TestStateDefinition:
@@ -54,7 +55,7 @@ class TestIntentRecognize:
             "params": {},
         }
 
-        result = intent_recognize(state)
+        result = intent_recognize(state, RunnableConfig())
 
         assert result["intent"] == "doc_gen"
         assert result["confidence"] == 0.95
@@ -77,7 +78,7 @@ class TestIntentRecognize:
             "params": {},
         }
 
-        intent_recognize(state)
+        intent_recognize(state, RunnableConfig())
 
         mock_llm.invoke.assert_called_once()
         call_args = mock_llm.invoke.call_args[0][0]
@@ -103,7 +104,7 @@ class TestIntentRecognize:
             "params": {},
         }
 
-        result = intent_recognize(state)
+        result = intent_recognize(state, RunnableConfig())
 
         assert result["intent"] == "doc_gen"
         assert result["confidence"] == 0.95
@@ -124,7 +125,7 @@ class TestIntentRecognize:
             "params": {},
         }
 
-        result = intent_recognize(state)
+        result = intent_recognize(state, RunnableConfig())
 
         assert result["intent"] == "unknown"
         assert result["confidence"] == 0.0
@@ -152,7 +153,7 @@ class TestDocGen:
             "params": {"directory_path": "./handler"},
         }
 
-        result = doc_gen(state)
+        result = doc_gen(state, RunnableConfig())
 
         assert "messages" in result
         assert result["messages"] == [ai_msg]
@@ -174,7 +175,7 @@ class TestDocGen:
             "params": {"directory_path": "./handler"},
         }
 
-        doc_gen(state)
+        doc_gen(state, RunnableConfig())
 
         mock_llm.bind_tools.assert_called_once()
         tools_arg = mock_llm.bind_tools.call_args[0][0]
@@ -203,7 +204,7 @@ class TestDocGen:
             "params": {"directory_path": "./handler"},
         }
 
-        doc_gen(state)
+        doc_gen(state, RunnableConfig())
 
         invoke_args = mock_llm_with_tools.invoke.call_args[0][0]
         assert invoke_args[0].type == "system"

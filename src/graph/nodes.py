@@ -9,6 +9,7 @@ import json
 import re
 from typing import Annotated
 
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from typing_extensions import TypedDict
 from langgraph.graph import END
@@ -33,7 +34,7 @@ class State(TypedDict):
 INTENT_LIST = "doc_gen"
 
 
-def intent_recognize(state: State) -> dict:
+def intent_recognize(state: State, config: RunnableConfig) -> dict:
     """意图识别节点。
 
     分析用户输入，判断意图类别，返回 intent / confidence / params。
@@ -51,7 +52,7 @@ def intent_recognize(state: State) -> dict:
         api_key=settings.llm.api_key,
         model=settings.llm.model,
     )
-    response = llm.invoke(messages)
+    response = llm.invoke(messages, config=config)
 
     raw = response.content
     m = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", raw, re.DOTALL)
@@ -80,7 +81,7 @@ from src.tools.doc_storage import save_document, read_document, list_documents
 TOOLS = [scan_directory, read_file, save_document, read_document, list_documents]
 
 
-def doc_gen(state: State) -> dict:
+def doc_gen(state: State, config: RunnableConfig) -> dict:
     """文档生成节点。
 
     使用 doc_gen 提示词和绑定工具的 LLM 生成文档。
@@ -99,7 +100,7 @@ def doc_gen(state: State) -> dict:
     llm_with_tools = llm.bind_tools(TOOLS)
 
     all_messages = system_messages + state["messages"]
-    response = llm_with_tools.invoke(all_messages)
+    response = llm_with_tools.invoke(all_messages, config=config)
 
     logger.info("文档生成节点调用完成")
     return {"messages": [response]}
