@@ -182,7 +182,7 @@ class TestOnMessageEdgeCases:
         error message — not an unhandled traceback."""
         app, mock_cl, mock_graph = app_module
 
-        async def _boom(*args, **kwargs):
+        def _boom(*args, **kwargs):
             raise RuntimeError("模拟错误")
 
         mock_graph.astream = MagicMock(side_effect=_boom)
@@ -195,6 +195,6 @@ class TestOnMessageEdgeCases:
 
         answer_obj = mock_cl.Message.return_value
         answer_obj.send.assert_awaited_once()
-        # Content must be non-empty and user-friendly
-        assert answer_obj.content
-        assert len(answer_obj.content) > 0
+        # Must be the error-path message, not the fallback message
+        assert "错误" in answer_obj.content
+        assert "稍后重试" in answer_obj.content
