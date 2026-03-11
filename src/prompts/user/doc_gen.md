@@ -1,1 +1,1 @@
-请为以下目录生成接口文档：{directory_path}
+请为以下文件生成接口文档：{file_path}

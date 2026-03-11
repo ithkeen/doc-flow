@@ -88,9 +88,9 @@ async def doc_gen(state: State, config: RunnableConfig) -> dict:
     与 ToolNode 形成 ReAct 循环。
     """
     prompt = load_prompt("doc_gen")
-    directory_path = state["params"].get("directory_path", "")
+    file_path = state["params"].get("file_path", "")
 
-    system_messages = prompt.format_messages(directory_path=directory_path)
+    system_messages = prompt.format_messages(file_path=file_path)
 
     llm = ChatOpenAI(
         base_url=settings.llm.base_url,
