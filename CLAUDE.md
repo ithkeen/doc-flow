@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-doc-flow is an AI-powered documentation generator that analyzes Go source code and produces structured Markdown API docs. It uses a LangGraph StateGraph with a ReAct agent loop: intent recognition routes to doc generation, which calls tools in a loop until complete. Entry point `app.py` serves the Chainlit chat UI; `main.py` is not yet wired up.
+doc-flow is an AI-powered documentation generator that analyzes Go source code and produces structured Markdown API docs. It uses a LangGraph StateGraph with a ReAct agent loop: intent recognition routes to doc generation, which calls tools in a loop until complete. Entry point `app.py` (project root) serves the Chainlit chat UI.
 
 ## Commands
 
@@ -44,6 +44,7 @@ START -> intent_recognize -> [route_by_intent] -> doc_gen -> [route_doc_gen] -> 
                                                           (ReAct loop continues)
 ```
 - `State(TypedDict)` holds `messages` (with `add_messages` reducer), `intent`, `confidence`, `params`.
+- Both `intent_recognize` and `doc_gen` are **async** functions (`async def`, `await llm.ainvoke()`) that accept `RunnableConfig` as a second parameter and forward it to LLM calls. This is required for Chainlit's `LangchainCallbackHandler` to work and to avoid callback threading issues.
 - `intent_recognize` loads the `"intent"` prompt, calls `ChatOpenAI`, parses JSON response into `intent`/`confidence`/`params`.
 - `doc_gen` loads the `"doc_gen"` prompt, binds 5 tools to `ChatOpenAI` (all tools except `git_diff`), returns AI message.
 - `route_by_intent` sends to `doc_gen` if intent matches, else `END`. `route_doc_gen` sends to `tools` if tool calls present, else `END`.
@@ -53,6 +54,7 @@ START -> intent_recognize -> [route_by_intent] -> doc_gen -> [route_doc_gen] -> 
 
 - **Singleton config**: `from src.config import settings` — instantiated at import time. Sub-configs use `env_prefix` (e.g., `LLM_`, `LANGSMITH_`, `LOG_`). `LLM_API_KEY` is required.
 - **`AGENT_WORK_DIR` path resolution**: `code_scanner`, `file_reader`, and `git_diff` tools resolve all file/directory paths relative to `settings.agent_work_dir` (defaults to `.`). This sandboxes tool access to the configured working directory.
+- **Tool constraints**: `file_reader` truncates files over 100KB (`MAX_FILE_SIZE_KB = 100`). `doc_storage` enforces module names matching `^[a-z][a-z0-9_]*$`. `git_diff` uses a 30s subprocess timeout and reads `.last_commit` to track the last doc generation point.
 - **JSON envelope responses**: All tools return via `ok(message, payload)` / `fail(error, message)` from `src/tools/utils.py` — consistent `{success, message, payload, error}` JSON strings.
 - **LangChain @tool decorator**: Every function in `src/tools/` is a LangChain tool with docstrings serving as LLM tool descriptions.
 - **Prompt templates**: Stored as `.md` files under `src/prompts/system/` and `src/prompts/user/`, loaded by name via `load_prompt("intent")` or `load_prompt("doc_gen")`.
@@ -61,9 +63,11 @@ START -> intent_recognize -> [route_by_intent] -> doc_gen -> [route_doc_gen] -> 
 **Testing conventions:**
 - Tests mirror `src/` structure under `tests/`
 - Use `monkeypatch` for env vars, `tmp_path` for filesystem isolation
+- Async tests use `pytest-asyncio` with explicit `@pytest.mark.asyncio` decorators
 - Logging tests use a `_reset_logging` autouse fixture to prevent handler accumulation
 - Tools are invoked via `.invoke({"param": "value"})` (LangChain tool invocation API)
 - Graph node tests use `@patch("src.graph.nodes.ChatOpenAI")` to mock LLM calls — no real API calls in tests
+- `tests/test_app.py` patches `sys.modules` with a mock `chainlit` module before importing `app` (then `importlib.reload`), because Chainlit decorators execute at import time
 - Config singleton tests that need a fresh instance use `monkeypatch.delitem(sys.modules, "src.config")` to force re-import
 - TDD workflow: write failing test first, implement, verify green, commit
 
