@@ -15,7 +15,7 @@ uv run pytest tests/config/ -v       # Run a specific test directory
 uv run pytest tests/config/test_settings.py -v  # Run a single test file
 uv run pytest tests/config/test_settings.py::TestClassName::test_method -v  # Run a single test
 uv run langgraph dev                 # Run LangGraph dev server (uses langgraph.json → src/graph/graph.py:build_graph)
-uv run chainlit run src/app.py -w    # Run Chainlit chat UI (hot reload)
+PYTHONPATH=. uv run chainlit run src/app.py -w  # Run Chainlit chat UI (hot reload)
 ```
 
 No linter or formatter is configured.
