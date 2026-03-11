@@ -20,3 +20,6 @@ logs/
 
 # LangGraph dev
 .langgraph_api/
+
+# Chainlit
+.chainlit/
