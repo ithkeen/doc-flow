@@ -50,13 +50,13 @@ def app_module():
     with patch.dict(sys.modules, {"chainlit": mock_cl}):
         with patch("src.graph.build_graph", return_value=mock_graph):
             # Remove cached module so reload picks up the mocks
-            sys.modules.pop("src.app", None)
-            import src.app
-            importlib.reload(src.app)
-            yield src.app, mock_cl, mock_graph
+            sys.modules.pop("app", None)
+            import app
+            importlib.reload(app)
+            yield app, mock_cl, mock_graph
 
     # cleanup: remove patched module so it doesn't leak between test files
-    sys.modules.pop("src.app", None)
+    sys.modules.pop("app", None)
 
 
 # ---------------------------------------------------------------------------

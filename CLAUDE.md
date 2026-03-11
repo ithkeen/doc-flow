@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-doc-flow is an AI-powered documentation generator that analyzes Go source code and produces structured Markdown API docs. It uses a LangGraph StateGraph with a ReAct agent loop: intent recognition routes to doc generation, which calls tools in a loop until complete. Entry point `src/app.py` serves the Chainlit chat UI; `main.py` is not yet wired up.
+doc-flow is an AI-powered documentation generator that analyzes Go source code and produces structured Markdown API docs. It uses a LangGraph StateGraph with a ReAct agent loop: intent recognition routes to doc generation, which calls tools in a loop until complete. Entry point `app.py` serves the Chainlit chat UI; `main.py` is not yet wired up.
 
 ## Commands
 
@@ -15,7 +15,7 @@ uv run pytest tests/config/ -v       # Run a specific test directory
 uv run pytest tests/config/test_settings.py -v  # Run a single test file
 uv run pytest tests/config/test_settings.py::TestClassName::test_method -v  # Run a single test
 uv run langgraph dev                 # Run LangGraph dev server (uses langgraph.json → src/graph/graph.py:build_graph)
-PYTHONPATH=. uv run chainlit run src/app.py -w  # Run Chainlit chat UI (hot reload)
+uv run chainlit run app.py -w            # Run Chainlit chat UI (hot reload)
 ```
 
 No linter or formatter is configured.
