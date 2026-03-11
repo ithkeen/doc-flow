@@ -46,7 +46,7 @@ class TestIntentRecognize:
         mock_llm = MagicMock()
         mock_llm.ainvoke = AsyncMock(
             return_value=AIMessage(
-                content='{"intent": "doc_gen", "confidence": 0.95, "params": {"directory_path": "./handler"}}'
+                content='{"intent": "doc_gen", "confidence": 0.95, "params": {"file_path": "./handler/api.go"}}'
             )
         )
         mock_chat_cls.return_value = mock_llm
@@ -62,7 +62,7 @@ class TestIntentRecognize:
 
         assert result["intent"] == "doc_gen"
         assert result["confidence"] == 0.95
-        assert result["params"]["directory_path"] == "./handler"
+        assert result["params"]["file_path"] == "./handler/api.go"
 
     @pytest.mark.asyncio
     @patch("src.graph.nodes.ChatOpenAI")
@@ -163,7 +163,7 @@ class TestDocGen:
             "messages": [HumanMessage(content="请为 ./handler 生成文档")],
             "intent": "doc_gen",
             "confidence": 0.95,
-            "params": {"directory_path": "./handler"},
+            "params": {"file_path": "./handler/api.go"},
         }
 
         result = await doc_gen(state, RunnableConfig())
@@ -188,7 +188,7 @@ class TestDocGen:
             "messages": [HumanMessage(content="生成文档")],
             "intent": "doc_gen",
             "confidence": 0.95,
-            "params": {"directory_path": "./handler"},
+            "params": {"file_path": "./handler/api.go"},
         }
 
         await doc_gen(state, RunnableConfig())
@@ -220,7 +220,7 @@ class TestDocGen:
             "messages": [human_msg],
             "intent": "doc_gen",
             "confidence": 0.95,
-            "params": {"directory_path": "./handler"},
+            "params": {"file_path": "./handler/api.go"},
         }
 
         await doc_gen(state, RunnableConfig())

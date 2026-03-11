@@ -103,6 +103,15 @@ class TestLoadBundledTemplates:
         result = load_prompt("doc_gen")
 
         assert isinstance(result, ChatPromptTemplate)
+        messages = result.format_messages(file_path="./handler/api.go")
+        assert len(messages) == 2
+        assert messages[0].type == "system"
+        assert messages[1].type == "human"
+        # Validate system prompt contains expected content
+        assert "Go API documentation generator" in messages[0].content
+        # Validate brace escaping resolved correctly (no leftover {{ or }})
+        assert "{{" not in messages[0].content, "Unresolved double braces in system prompt"
+        assert "}}" not in messages[0].content, "Unresolved double braces in system prompt"
 
 
 class TestModuleExport:
