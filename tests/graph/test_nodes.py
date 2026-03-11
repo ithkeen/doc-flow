@@ -2,7 +2,7 @@
 
 import pytest
 from typing import get_type_hints, Annotated
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
 
@@ -38,13 +38,16 @@ class TestStateDefinition:
 class TestIntentRecognize:
     """意图识别节点测试。"""
 
+    @pytest.mark.asyncio
     @patch("src.graph.nodes.ChatOpenAI")
-    def test_returns_intent_fields(self, mock_chat_cls):
+    async def test_returns_intent_fields(self, mock_chat_cls):
         from src.graph.nodes import intent_recognize
 
         mock_llm = MagicMock()
-        mock_llm.invoke.return_value = AIMessage(
-            content='{"intent": "doc_gen", "confidence": 0.95, "params": {"directory_path": "./handler"}}'
+        mock_llm.ainvoke = AsyncMock(
+            return_value=AIMessage(
+                content='{"intent": "doc_gen", "confidence": 0.95, "params": {"directory_path": "./handler"}}'
+            )
         )
         mock_chat_cls.return_value = mock_llm
 
@@ -55,19 +58,22 @@ class TestIntentRecognize:
             "params": {},
         }
 
-        result = intent_recognize(state, RunnableConfig())
+        result = await intent_recognize(state, RunnableConfig())
 
         assert result["intent"] == "doc_gen"
         assert result["confidence"] == 0.95
         assert result["params"]["directory_path"] == "./handler"
 
+    @pytest.mark.asyncio
     @patch("src.graph.nodes.ChatOpenAI")
-    def test_calls_llm_with_intent_prompt(self, mock_chat_cls):
+    async def test_calls_llm_with_intent_prompt(self, mock_chat_cls):
         from src.graph.nodes import intent_recognize
 
         mock_llm = MagicMock()
-        mock_llm.invoke.return_value = AIMessage(
-            content='{"intent": "unknown", "confidence": 0.3, "params": {}}'
+        mock_llm.ainvoke = AsyncMock(
+            return_value=AIMessage(
+                content='{"intent": "unknown", "confidence": 0.3, "params": {}}'
+            )
         )
         mock_chat_cls.return_value = mock_llm
 
@@ -78,22 +84,25 @@ class TestIntentRecognize:
             "params": {},
         }
 
-        intent_recognize(state, RunnableConfig())
+        await intent_recognize(state, RunnableConfig())
 
-        mock_llm.invoke.assert_called_once()
-        call_args = mock_llm.invoke.call_args[0][0]
+        mock_llm.ainvoke.assert_called_once()
+        call_args = mock_llm.ainvoke.call_args[0][0]
         assert len(call_args) == 2
         assert call_args[0].type == "system"
         assert call_args[1].type == "human"
 
+    @pytest.mark.asyncio
     @patch("src.graph.nodes.ChatOpenAI")
-    def test_parses_json_wrapped_in_markdown_code_block(self, mock_chat_cls):
+    async def test_parses_json_wrapped_in_markdown_code_block(self, mock_chat_cls):
         """LLM 返回 ```json ... ``` 包裹的 JSON 时应正确解析。"""
         from src.graph.nodes import intent_recognize
 
         mock_llm = MagicMock()
-        mock_llm.invoke.return_value = AIMessage(
-            content='```json\n{"intent": "doc_gen", "confidence": 0.95, "params": {"file_path": "handler.go"}}\n```'
+        mock_llm.ainvoke = AsyncMock(
+            return_value=AIMessage(
+                content='```json\n{"intent": "doc_gen", "confidence": 0.95, "params": {"file_path": "handler.go"}}\n```'
+            )
         )
         mock_chat_cls.return_value = mock_llm
 
@@ -104,18 +113,21 @@ class TestIntentRecognize:
             "params": {},
         }
 
-        result = intent_recognize(state, RunnableConfig())
+        result = await intent_recognize(state, RunnableConfig())
 
         assert result["intent"] == "doc_gen"
         assert result["confidence"] == 0.95
         assert result["params"]["file_path"] == "handler.go"
 
+    @pytest.mark.asyncio
     @patch("src.graph.nodes.ChatOpenAI")
-    def test_handles_invalid_json_gracefully(self, mock_chat_cls):
+    async def test_handles_invalid_json_gracefully(self, mock_chat_cls):
         from src.graph.nodes import intent_recognize
 
         mock_llm = MagicMock()
-        mock_llm.invoke.return_value = AIMessage(content="这不是 JSON")
+        mock_llm.ainvoke = AsyncMock(
+            return_value=AIMessage(content="这不是 JSON")
+        )
         mock_chat_cls.return_value = mock_llm
 
         state = {
@@ -125,7 +137,7 @@ class TestIntentRecognize:
             "params": {},
         }
 
-        result = intent_recognize(state, RunnableConfig())
+        result = await intent_recognize(state, RunnableConfig())
 
         assert result["intent"] == "unknown"
         assert result["confidence"] == 0.0
@@ -134,8 +146,9 @@ class TestIntentRecognize:
 class TestDocGen:
     """文档生成节点测试。"""
 
+    @pytest.mark.asyncio
     @patch("src.graph.nodes.ChatOpenAI")
-    def test_returns_messages_with_ai_response(self, mock_chat_cls):
+    async def test_returns_messages_with_ai_response(self, mock_chat_cls):
         from src.graph.nodes import doc_gen
 
         mock_llm = MagicMock()
@@ -143,7 +156,7 @@ class TestDocGen:
         mock_llm.bind_tools.return_value = mock_llm_with_tools
 
         ai_msg = AIMessage(content="已为您生成文档。")
-        mock_llm_with_tools.invoke.return_value = ai_msg
+        mock_llm_with_tools.ainvoke = AsyncMock(return_value=ai_msg)
         mock_chat_cls.return_value = mock_llm
 
         state = {
@@ -153,19 +166,22 @@ class TestDocGen:
             "params": {"directory_path": "./handler"},
         }
 
-        result = doc_gen(state, RunnableConfig())
+        result = await doc_gen(state, RunnableConfig())
 
         assert "messages" in result
         assert result["messages"] == [ai_msg]
 
+    @pytest.mark.asyncio
     @patch("src.graph.nodes.ChatOpenAI")
-    def test_binds_tools_to_llm(self, mock_chat_cls):
+    async def test_binds_tools_to_llm(self, mock_chat_cls):
         from src.graph.nodes import doc_gen
 
         mock_llm = MagicMock()
         mock_llm_with_tools = MagicMock()
         mock_llm.bind_tools.return_value = mock_llm_with_tools
-        mock_llm_with_tools.invoke.return_value = AIMessage(content="done")
+        mock_llm_with_tools.ainvoke = AsyncMock(
+            return_value=AIMessage(content="done")
+        )
         mock_chat_cls.return_value = mock_llm
 
         state = {
@@ -175,7 +191,7 @@ class TestDocGen:
             "params": {"directory_path": "./handler"},
         }
 
-        doc_gen(state, RunnableConfig())
+        await doc_gen(state, RunnableConfig())
 
         mock_llm.bind_tools.assert_called_once()
         tools_arg = mock_llm.bind_tools.call_args[0][0]
@@ -186,14 +202,17 @@ class TestDocGen:
         assert "read_document" in tool_names
         assert "list_documents" in tool_names
 
+    @pytest.mark.asyncio
     @patch("src.graph.nodes.ChatOpenAI")
-    def test_prepends_system_prompt_to_messages(self, mock_chat_cls):
+    async def test_prepends_system_prompt_to_messages(self, mock_chat_cls):
         from src.graph.nodes import doc_gen
 
         mock_llm = MagicMock()
         mock_llm_with_tools = MagicMock()
         mock_llm.bind_tools.return_value = mock_llm_with_tools
-        mock_llm_with_tools.invoke.return_value = AIMessage(content="done")
+        mock_llm_with_tools.ainvoke = AsyncMock(
+            return_value=AIMessage(content="done")
+        )
         mock_chat_cls.return_value = mock_llm
 
         human_msg = HumanMessage(content="生成文档")
@@ -204,9 +223,9 @@ class TestDocGen:
             "params": {"directory_path": "./handler"},
         }
 
-        doc_gen(state, RunnableConfig())
+        await doc_gen(state, RunnableConfig())
 
-        invoke_args = mock_llm_with_tools.invoke.call_args[0][0]
+        invoke_args = mock_llm_with_tools.ainvoke.call_args[0][0]
         assert invoke_args[0].type == "system"
         assert invoke_args[-1] == human_msg
 
