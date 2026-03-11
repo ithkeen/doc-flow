@@ -86,6 +86,30 @@ class TestIntentRecognize:
         assert call_args[1].type == "human"
 
     @patch("src.graph.nodes.ChatOpenAI")
+    def test_parses_json_wrapped_in_markdown_code_block(self, mock_chat_cls):
+        """LLM 返回 ```json ... ``` 包裹的 JSON 时应正确解析。"""
+        from src.graph.nodes import intent_recognize
+
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(
+            content='```json\n{"intent": "doc_gen", "confidence": 0.95, "params": {"file_path": "handler.go"}}\n```'
+        )
+        mock_chat_cls.return_value = mock_llm
+
+        state = {
+            "messages": [HumanMessage(content="请为 handler.go 生成文档")],
+            "intent": "",
+            "confidence": 0.0,
+            "params": {},
+        }
+
+        result = intent_recognize(state)
+
+        assert result["intent"] == "doc_gen"
+        assert result["confidence"] == 0.95
+        assert result["params"]["file_path"] == "handler.go"
+
+    @patch("src.graph.nodes.ChatOpenAI")
     def test_handles_invalid_json_gracefully(self, mock_chat_cls):
         from src.graph.nodes import intent_recognize
 

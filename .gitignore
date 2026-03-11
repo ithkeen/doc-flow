@@ -17,3 +17,6 @@ logs/
 
 # IDE
 .idea/
+
+# LangGraph dev
+.langgraph_api/

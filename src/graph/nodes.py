@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Annotated
 
 from langchain_openai import ChatOpenAI
@@ -52,8 +53,13 @@ def intent_recognize(state: State) -> dict:
     )
     response = llm.invoke(messages)
 
+    raw = response.content
+    m = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", raw, re.DOTALL)
+    if m:
+        raw = m.group(1)
+
     try:
-        parsed = json.loads(response.content)
+        parsed = json.loads(raw)
         intent = parsed.get("intent", "unknown")
         confidence = float(parsed.get("confidence", 0.0))
         params = parsed.get("params", {})

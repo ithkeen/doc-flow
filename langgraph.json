@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "doc_flow": "./src/graph/graph.py:build_graph"
+  },
+  "env": ".env"
+}
