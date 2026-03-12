@@ -384,3 +384,34 @@ class TestRouteDocQa:
         ai_msg = AIMessage(content="根据文档，CreateUser 接口需要以下参数...")
         state = {"messages": [ai_msg], "intent": "doc_qa", "confidence": 0.9, "params": {}}
         assert route_doc_qa(state) == END
+
+
+class TestGetLastHumanMessage:
+    """_get_last_human_message 辅助函数测试。"""
+
+    def test_returns_last_human_message_from_mixed_list(self):
+        from src.graph.nodes import _get_last_human_message
+
+        messages = [
+            HumanMessage(content="第一条"),
+            AIMessage(content="AI 回复"),
+            HumanMessage(content="第二条"),
+        ]
+        assert _get_last_human_message(messages) == "第二条"
+
+    def test_returns_empty_string_for_empty_list(self):
+        from src.graph.nodes import _get_last_human_message
+
+        assert _get_last_human_message([]) == ""
+
+    def test_returns_empty_string_when_no_human_message(self):
+        from src.graph.nodes import _get_last_human_message
+
+        messages = [AIMessage(content="AI only")]
+        assert _get_last_human_message(messages) == ""
+
+    def test_returns_content_for_single_human_message(self):
+        from src.graph.nodes import _get_last_human_message
+
+        messages = [HumanMessage(content="唯一一条")]
+        assert _get_last_human_message(messages) == "唯一一条"

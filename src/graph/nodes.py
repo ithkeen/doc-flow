@@ -9,6 +9,7 @@ import json
 import re
 from typing import Annotated
 
+from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from typing_extensions import TypedDict
@@ -80,6 +81,14 @@ from src.tools.doc_storage import save_document, read_document, list_documents
 TOOLS = [scan_directory, read_file, save_document, read_document, list_documents]
 
 QA_TOOLS = [read_document, list_documents]
+
+
+def _get_last_human_message(messages: list) -> str:
+    """返回消息列表中最后一条 HumanMessage 的内容。"""
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            return msg.content
+    return ""
 
 
 async def doc_qa(state: State, config: RunnableConfig) -> dict:
