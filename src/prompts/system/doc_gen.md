@@ -74,7 +74,8 @@ Mermaid flowchart rules:
 - Main path steps: rectangle nodes with `["label"]`
 - Error exits: rounded nodes with `("label")`
 - Always quote node labels with double quotes to avoid Mermaid syntax conflicts
-- Number each step for readability
+- Use edge labels (`-->|condition|`) for branching; do not use diamond decision nodes
+- Keep node labels concise; number each step for readability
 - Success path flows top-down; error branches go left or right
 - Error codes in the flowchart must match the Error Codes table exactly
 
@@ -153,3 +154,4 @@ curl -X POST http://localhost:8080/api/v1/resource \
 - For nested structs, flatten into dot notation in tables (e.g., `data.user.name`) or use a sub-table
 - Execution Flow Mermaid diagram must cover all steps and error branches from Task 2
 - Error codes in the Mermaid flowchart must be consistent with the Error Codes table
+- Execution Flow must use `flowchart TD` (top-down) direction
