@@ -19,7 +19,7 @@ graph = build_graph()
 async def on_chat_start():
     """新会话开始时发送欢迎消息。"""
     await cl.Message(
-        content="你好！我是 doc-flow，请告诉我你想为哪个 Go 项目目录生成文档。"
+        content="你好！我是 doc-flow，你可以让我为 Go 源码文件生成 API 文档，或者基于已有文档提问。"
     ).send()
 
 
@@ -47,7 +47,7 @@ async def on_message(message: cl.Message):
             if (
                 msg.content
                 and not isinstance(msg, HumanMessage)
-                and metadata["langgraph_node"] == "doc_gen"
+                and metadata["langgraph_node"] in ("doc_gen", "doc_qa")
             ):
                 await answer.stream_token(msg.content)
     except Exception:
@@ -55,6 +55,6 @@ async def on_message(message: cl.Message):
         answer.content = "抱歉，处理过程中出现错误，请稍后重试。"
 
     if not answer.content:
-        answer.content = "抱歉，我目前只支持文档生成功能。请告诉我你想为哪个目录生成文档。"
+        answer.content = "抱歉，我目前支持文档生成和文档问答功能。你可以让我为某个文件生成文档，或者基于已有文档提问。"
 
     await answer.send()

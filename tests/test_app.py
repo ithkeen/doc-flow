@@ -104,6 +104,29 @@ class TestOnMessageCoreFlow:
         assert "第三段" in streamed
 
     @pytest.mark.asyncio
+    async def test_streams_doc_qa_node_content(self, app_module):
+        """graph.astream yields AIMessageChunks from doc_qa; content
+        must be forwarded via answer.stream_token()."""
+        app, mock_cl, mock_graph = app_module
+
+        chunks = [
+            (AIMessageChunk(content="根据文档"), {"langgraph_node": "doc_qa"}),
+            (AIMessageChunk(content="，CreateUser 需要 username 参数"), {"langgraph_node": "doc_qa"}),
+        ]
+        mock_graph.astream = MagicMock(return_value=_astream_from(chunks))
+
+        user_msg = MagicMock()
+        user_msg.content = "CreateUser 的参数有哪些？"
+
+        await app.on_message(user_msg)
+
+        answer_obj = mock_cl.Message.return_value
+        calls = answer_obj.stream_token.call_args_list
+        streamed = [c.args[0] for c in calls]
+        assert "根据文档" in streamed
+        assert "，CreateUser 需要 username 参数" in streamed
+
+    @pytest.mark.asyncio
     async def test_skips_intent_recognize_node_content(self, app_module):
         """Chunks from intent_recognize should NOT be streamed to the user;
         only doc_gen chunks should appear."""
@@ -173,8 +196,9 @@ class TestOnMessageEdgeCases:
 
         answer_obj = mock_cl.Message.return_value
         answer_obj.send.assert_awaited_once()
-        # The fallback message should mention doc generation capability
-        assert "文档生成" in answer_obj.content or "文档" in answer_obj.content
+        # The fallback message should mention both capabilities
+        assert "文档生成" in answer_obj.content
+        assert "文档问答" in answer_obj.content
 
     @pytest.mark.asyncio
     async def test_handles_graph_error_gracefully(self, app_module):
