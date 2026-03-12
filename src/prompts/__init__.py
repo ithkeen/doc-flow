@@ -8,7 +8,7 @@ Usage::
 
     prompt = load_prompt("intent")
     chain = prompt | llm
-    result = chain.invoke({"user_input": "...", "intent_list": "..."})
+    result = chain.invoke({"user_input": "..."})
 """
 
 from src.prompts.loader import load_prompt
