@@ -80,6 +80,33 @@ from src.tools.doc_storage import save_document, read_document, list_documents
 
 TOOLS = [scan_directory, read_file, save_document, read_document, list_documents]
 
+QA_TOOLS = [read_document, list_documents]
+
+
+async def doc_qa(state: State, config: RunnableConfig) -> dict:
+    """文档问答节点。
+
+    使用 doc_qa 提示词和绑定工具的 LLM 回答文档相关问题。
+    与 qa_tools ToolNode 形成 ReAct 循环。
+    """
+    prompt = load_prompt("doc_qa")
+    user_input = state["messages"][0].content
+
+    system_messages = prompt.format_messages(user_input=user_input)
+
+    llm = ChatOpenAI(
+        base_url=settings.llm.base_url,
+        api_key=settings.llm.api_key,
+        model=settings.llm.model,
+    )
+    llm_with_tools = llm.bind_tools(QA_TOOLS)
+
+    all_messages = system_messages + state["messages"]
+    response = await llm_with_tools.ainvoke(all_messages, config=config)
+
+    logger.info("文档问答节点调用完成")
+    return {"messages": [response]}
+
 
 async def doc_gen(state: State, config: RunnableConfig) -> dict:
     """文档生成节点。

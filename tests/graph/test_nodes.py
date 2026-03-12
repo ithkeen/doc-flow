@@ -230,6 +230,91 @@ class TestDocGen:
         assert invoke_args[-1] == human_msg
 
 
+class TestDocQa:
+    """文档问答节点测试。"""
+
+    @pytest.mark.asyncio
+    @patch("src.graph.nodes.ChatOpenAI")
+    async def test_returns_messages_with_ai_response(self, mock_chat_cls):
+        from src.graph.nodes import doc_qa
+
+        mock_llm = MagicMock()
+        mock_llm_with_tools = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm_with_tools
+
+        ai_msg = AIMessage(content="CreateUser 接口需要 username 和 email 两个参数。")
+        mock_llm_with_tools.ainvoke = AsyncMock(return_value=ai_msg)
+        mock_chat_cls.return_value = mock_llm
+
+        state = {
+            "messages": [HumanMessage(content="CreateUser 的请求参数有哪些？")],
+            "intent": "doc_qa",
+            "confidence": 0.9,
+            "params": {},
+        }
+
+        result = await doc_qa(state, RunnableConfig())
+
+        assert "messages" in result
+        assert result["messages"] == [ai_msg]
+
+    @pytest.mark.asyncio
+    @patch("src.graph.nodes.ChatOpenAI")
+    async def test_binds_qa_tools_to_llm(self, mock_chat_cls):
+        from src.graph.nodes import doc_qa
+
+        mock_llm = MagicMock()
+        mock_llm_with_tools = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm_with_tools
+        mock_llm_with_tools.ainvoke = AsyncMock(
+            return_value=AIMessage(content="done")
+        )
+        mock_chat_cls.return_value = mock_llm
+
+        state = {
+            "messages": [HumanMessage(content="CreateUser 怎么用？")],
+            "intent": "doc_qa",
+            "confidence": 0.9,
+            "params": {},
+        }
+
+        await doc_qa(state, RunnableConfig())
+
+        mock_llm.bind_tools.assert_called_once()
+        tools_arg = mock_llm.bind_tools.call_args[0][0]
+        tool_names = [t.name for t in tools_arg]
+        assert "read_document" in tool_names
+        assert "list_documents" in tool_names
+        assert len(tool_names) == 2
+
+    @pytest.mark.asyncio
+    @patch("src.graph.nodes.ChatOpenAI")
+    async def test_prepends_system_prompt_to_messages(self, mock_chat_cls):
+        from src.graph.nodes import doc_qa
+
+        mock_llm = MagicMock()
+        mock_llm_with_tools = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm_with_tools
+        mock_llm_with_tools.ainvoke = AsyncMock(
+            return_value=AIMessage(content="done")
+        )
+        mock_chat_cls.return_value = mock_llm
+
+        human_msg = HumanMessage(content="CreateUser 的参数有哪些？")
+        state = {
+            "messages": [human_msg],
+            "intent": "doc_qa",
+            "confidence": 0.9,
+            "params": {},
+        }
+
+        await doc_qa(state, RunnableConfig())
+
+        invoke_args = mock_llm_with_tools.ainvoke.call_args[0][0]
+        assert invoke_args[0].type == "system"
+        assert invoke_args[-1] == human_msg
+
+
 class TestRouteByIntent:
     """意图路由函数测试。"""
 
