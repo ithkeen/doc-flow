@@ -424,3 +424,157 @@ class TestGetLastHumanMessage:
 
         messages = [HumanMessage(content="唯一一条")]
         assert _get_last_human_message(messages) == "唯一一条"
+
+
+class TestChat:
+    """聊天节点测试。"""
+
+    @pytest.mark.asyncio
+    @patch("src.graph.nodes.ChatOpenAI")
+    async def test_returns_messages_with_ai_response(self, mock_chat_cls):
+        from src.graph.nodes import chat
+
+        mock_llm = MagicMock()
+        ai_msg = AIMessage(content="你好！有什么可以帮你的吗？")
+        mock_llm.ainvoke = AsyncMock(return_value=ai_msg)
+        mock_chat_cls.return_value = mock_llm
+
+        state = {
+            "messages": [HumanMessage(content="你好")],
+            "intent": "chat",
+            "confidence": 0.8,
+            "params": {},
+        }
+
+        result = await chat(state, RunnableConfig())
+
+        assert "messages" in result
+        assert result["messages"] == [ai_msg]
+
+    @pytest.mark.asyncio
+    @patch("src.graph.nodes.load_prompt")
+    @patch("src.graph.nodes.ChatOpenAI")
+    async def test_loads_chat_prompt(self, mock_chat_cls, mock_load_prompt):
+        from src.graph.nodes import chat
+
+        mock_load_prompt.return_value.format_messages.return_value = []
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content="done"))
+        mock_chat_cls.return_value = mock_llm
+
+        state = {
+            "messages": [HumanMessage(content="你好")],
+            "intent": "chat",
+            "confidence": 0.8,
+            "params": {},
+        }
+
+        await chat(state, RunnableConfig())
+
+        mock_load_prompt.assert_called_once_with("chat")
+
+    @pytest.mark.asyncio
+    @patch("src.graph.nodes.ChatOpenAI")
+    async def test_does_not_bind_tools(self, mock_chat_cls):
+        from src.graph.nodes import chat
+
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(
+            return_value=AIMessage(content="done")
+        )
+        mock_chat_cls.return_value = mock_llm
+
+        state = {
+            "messages": [HumanMessage(content="你好")],
+            "intent": "chat",
+            "confidence": 0.8,
+            "params": {},
+        }
+
+        await chat(state, RunnableConfig())
+
+        mock_llm.bind_tools.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("src.graph.nodes.ChatOpenAI")
+    async def test_prepends_system_prompt_to_messages(self, mock_chat_cls):
+        from src.graph.nodes import chat
+
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(
+            return_value=AIMessage(content="done")
+        )
+        mock_chat_cls.return_value = mock_llm
+
+        human_msg = HumanMessage(content="聊聊天吧")
+        state = {
+            "messages": [human_msg],
+            "intent": "chat",
+            "confidence": 0.8,
+            "params": {},
+        }
+
+        await chat(state, RunnableConfig())
+
+        invoke_args = mock_llm.ainvoke.call_args[0][0]
+        assert invoke_args[0].type == "system"
+        assert invoke_args[-1] == human_msg
+
+    @pytest.mark.asyncio
+    @patch("src.graph.nodes.ChatOpenAI")
+    async def test_passes_message_history(self, mock_chat_cls):
+        """多轮对话时，chat 节点应传入完整对话历史。"""
+        from src.graph.nodes import chat
+
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(
+            return_value=AIMessage(content="done")
+        )
+        mock_chat_cls.return_value = mock_llm
+
+        state = {
+            "messages": [
+                HumanMessage(content="第一轮"),
+                AIMessage(content="第一轮回答"),
+                HumanMessage(content="第二轮"),
+            ],
+            "intent": "chat",
+            "confidence": 0.8,
+            "params": {},
+        }
+
+        await chat(state, RunnableConfig())
+
+        invoke_args = mock_llm.ainvoke.call_args[0][0]
+        # system prompt + user prompt + 3 messages from history = 5 total
+        assert len(invoke_args) == 5
+        assert invoke_args[0].type == "system"
+        # The 3 conversation messages should be in the list
+        contents = [m.content for m in invoke_args[2:]]
+        assert "第一轮" in contents
+        assert "第一轮回答" in contents
+        assert "第二轮" in contents
+
+    @pytest.mark.asyncio
+    @patch("src.graph.nodes.ChatOpenAI")
+    async def test_passes_config_to_ainvoke(self, mock_chat_cls):
+        from src.graph.nodes import chat
+
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(
+            return_value=AIMessage(content="done")
+        )
+        mock_chat_cls.return_value = mock_llm
+
+        state = {
+            "messages": [HumanMessage(content="你好")],
+            "intent": "chat",
+            "confidence": 0.8,
+            "params": {},
+        }
+
+        config = RunnableConfig(configurable={"thread_id": "test-123"})
+        await chat(state, config)
+
+        call_kwargs = mock_llm.ainvoke.call_args
+        assert call_kwargs[1]["config"] == config

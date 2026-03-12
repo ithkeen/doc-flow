@@ -141,6 +141,30 @@ async def doc_gen(state: State, config: RunnableConfig) -> dict:
     return {"messages": [response]}
 
 
+async def chat(state: State, config: RunnableConfig) -> dict:
+    """聊天节点。
+
+    使用 chat 提示词与 LLM 进行自由对话，不绑定工具。
+    通过 system prompt 柔和引导用户使用文档功能。
+    """
+    prompt = load_prompt("chat")
+    user_input = _get_last_human_message(state["messages"])
+
+    system_messages = prompt.format_messages(user_input=user_input)
+
+    llm = ChatOpenAI(
+        base_url=settings.llm.base_url,
+        api_key=settings.llm.api_key,
+        model=settings.llm.model,
+    )
+
+    all_messages = system_messages + state["messages"]
+    response = await llm.ainvoke(all_messages, config=config)
+
+    logger.info("聊天节点调用完成")
+    return {"messages": [response]}
+
+
 def route_by_intent(state: State) -> str:
     """根据意图识别结果路由到对应节点。"""
     if state["intent"] == "doc_gen":
