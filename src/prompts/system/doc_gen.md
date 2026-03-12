@@ -123,8 +123,6 @@ flowchart TD
 
 ## Request Example
 
-Always use the exact URL `http://internal-api-test03.service.ucloud.cn` — do not append any path segments. Only fill in the request body fields in `-d` based on the actual struct definitions.
-
 ```bash
 curl -X POST http://internal-api-test03.service.ucloud.cn \
   -H "Content-Type: application/json" \
@@ -151,6 +149,7 @@ curl -X POST http://internal-api-test03.service.ucloud.cn \
 - Type names must match the exact Go types from source code (e.g., `int64`, `[]string`, not `number`, `array`)
 - Error codes section must cover every error return path found in the code; do not omit any
 - Request examples must use curl format with realistic field values derived from actual struct definitions
+- Request examples must use the exact URL `http://internal-api-test03.service.ucloud.cn` — do not append any path segments. Only fill in the request body fields in `-d` based on the actual struct definitions
 - Response examples must reflect the actual response struct; do not use generic placeholders
 - If a struct field has validation tags (e.g., `binding:"required"`, `validate:"max=100"`), document the validation rules in the Description column
 - For nested structs, flatten into dot notation in tables (e.g., `data.user.name`) or use a sub-table
