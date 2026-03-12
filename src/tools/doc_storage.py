@@ -23,7 +23,7 @@ def _validate_module_name(module_name: str) -> str | None:
 
 def _get_doc_path(module_name: str, api_name: str) -> Path:
     """构建文档文件路径：{docs_output_dir}/{module_name}/{api_name}.md"""
-    return Path(settings.docs_output_dir) / module_name / f"{api_name}.md"
+    return Path(settings.agent_work_dir) / settings.docs_output_dir / module_name / f"{api_name}.md"
 
 
 @tool
@@ -112,7 +112,7 @@ def list_documents(module_name: str | None = None) -> str:
     Returns:
         JSON envelope，payload 为文档文件列表（按模块分组）。
     """
-    base = Path(settings.docs_output_dir)
+    base = Path(settings.agent_work_dir) / settings.docs_output_dir
 
     if not base.exists():
         if module_name:
