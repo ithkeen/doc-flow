@@ -122,18 +122,3 @@ class TestSettingsSingleton:
         assert s1 is s2
 
 
-class TestLoadFromEnvFile:
-    """直接从 .env 文件加载配置，不 mock，用于人工对比验证。"""
-
-    def test_print_all_settings(self):
-        s = Settings()
-        print("\n========== .env 文件实际加载结果 ==========")
-        print(f"LLM_BASE_URL:       {s.llm.base_url}")
-        print(f"LLM_API_KEY:        {s.llm.api_key[:8]}...（已脱敏）")
-        print(f"LLM_MODEL:          {s.llm.model}")
-        print(f"DOCS_OUTPUT_DIR:    {s.docs_output_dir}")
-        print(f"LANGSMITH_TRACING:  {s.langsmith.tracing}")
-        print(f"LANGSMITH_API_KEY:  {s.langsmith.api_key[:8] + '...' if s.langsmith.api_key else None}（已脱敏）")
-        print(f"LANGSMITH_PROJECT:  {s.langsmith.project}")
-        print(f"LANGSMITH_ENDPOINT: {s.langsmith.endpoint}")
-        print("===========================================")

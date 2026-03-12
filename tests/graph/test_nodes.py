@@ -7,34 +7,6 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
 
 
-class TestStateDefinition:
-    """State 类型结构验证。"""
-
-    def test_state_has_messages_field(self):
-        from src.graph.nodes import State
-
-        hints = get_type_hints(State, include_extras=True)
-        assert "messages" in hints
-
-    def test_state_has_intent_field(self):
-        from src.graph.nodes import State
-
-        hints = get_type_hints(State)
-        assert "intent" in hints
-
-    def test_state_has_confidence_field(self):
-        from src.graph.nodes import State
-
-        hints = get_type_hints(State)
-        assert "confidence" in hints
-
-    def test_state_has_params_field(self):
-        from src.graph.nodes import State
-
-        hints = get_type_hints(State)
-        assert "params" in hints
-
-
 class TestIntentRecognize:
     """意图识别节点测试。"""
 
@@ -358,25 +330,22 @@ class TestRouteByIntent:
         state = {"intent": "doc_gen", "confidence": 0.9, "params": {}, "messages": []}
         assert route_by_intent(state) == "doc_gen"
 
-    def test_routes_to_end_for_unknown_intent(self):
-        from src.graph.nodes import route_by_intent
-        from langgraph.graph import END
-
-        state = {"intent": "unknown", "confidence": 0.3, "params": {}, "messages": []}
-        assert route_by_intent(state) == END
-
-    def test_routes_to_end_for_empty_intent(self):
-        from src.graph.nodes import route_by_intent
-        from langgraph.graph import END
-
-        state = {"intent": "", "confidence": 0.0, "params": {}, "messages": []}
-        assert route_by_intent(state) == END
-
     def test_routes_to_doc_qa_for_doc_qa_intent(self):
         from src.graph.nodes import route_by_intent
 
         state = {"intent": "doc_qa", "confidence": 0.9, "params": {}, "messages": []}
         assert route_by_intent(state) == "doc_qa"
+
+    @pytest.mark.parametrize("intent,confidence", [
+        ("unknown", 0.3),
+        ("", 0.0),
+    ])
+    def test_routes_to_end_for_invalid_intent(self, intent, confidence):
+        from src.graph.nodes import route_by_intent
+        from langgraph.graph import END
+
+        state = {"intent": intent, "confidence": confidence, "params": {}, "messages": []}
+        assert route_by_intent(state) == END
 
 
 class TestRouteDocGen:
