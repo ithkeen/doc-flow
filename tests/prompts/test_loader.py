@@ -107,11 +107,23 @@ class TestLoadBundledTemplates:
         assert len(messages) == 2
         assert messages[0].type == "system"
         assert messages[1].type == "human"
-        # Validate system prompt contains expected content
-        assert "Go API documentation generator" in messages[0].content
+        content = messages[0].content
+        # Role unchanged
+        assert "Go API documentation generator" in content
+        # Task 1: Recursive context building with queue tracking
+        assert "Resolved" in content
+        assert "Unresolved" in content
+        # Task 2: Execution flow analysis (new)
+        assert "Execution Flow Analysis" in content
+        assert "Happy Path" in content
+        assert "Error Exits" in content
+        # Task 3: Mermaid flowchart in template
+        assert "flowchart TD" in content
+        # Documentation template has Execution Flow section
+        assert "## Execution Flow" in content
         # Validate brace escaping resolved correctly (no leftover {{ or }})
-        assert "{{" not in messages[0].content, "Unresolved double braces in system prompt"
-        assert "}}" not in messages[0].content, "Unresolved double braces in system prompt"
+        assert "{{" not in content, "Unresolved double braces in system prompt"
+        assert "}}" not in content, "Unresolved double braces in system prompt"
 
 
 class TestModuleExport:
