@@ -336,6 +336,12 @@ class TestRouteByIntent:
         state = {"intent": "doc_qa", "confidence": 0.9, "params": {}, "messages": []}
         assert route_by_intent(state) == "doc_qa"
 
+    def test_routes_to_chat_for_chat_intent(self):
+        from src.graph.nodes import route_by_intent
+
+        state = {"intent": "chat", "confidence": 0.8, "params": {}, "messages": []}
+        assert route_by_intent(state) == "chat"
+
     @pytest.mark.parametrize("intent,confidence", [
         ("unknown", 0.3),
         ("", 0.0),

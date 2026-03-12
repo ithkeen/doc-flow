@@ -32,7 +32,7 @@ class State(TypedDict):
     params: dict
 
 
-INTENT_LIST = "doc_gen, doc_qa"
+INTENT_LIST = "doc_gen, doc_qa, chat"
 
 
 async def intent_recognize(state: State, config: RunnableConfig) -> dict:
@@ -147,6 +147,8 @@ def route_by_intent(state: State) -> str:
         return "doc_gen"
     if state["intent"] == "doc_qa":
         return "doc_qa"
+    if state["intent"] == "chat":
+        return "chat"
     return END
 
 
