@@ -8,6 +8,9 @@ from __future__ import annotations
 from langgraph.graph import START, StateGraph
 from langgraph.prebuilt import ToolNode
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.graph.state import CompiledStateGraph
+
 from src.graph.nodes import (
     TOOLS,
     QA_TOOLS,
@@ -21,7 +24,7 @@ from src.graph.nodes import (
 )
 
 
-def build_graph() -> StateGraph:
+def build_graph(checkpointer: BaseCheckpointSaver | None = None) -> CompiledStateGraph:
     """构建并编译 agent 工作流图。
 
     Returns:
@@ -42,4 +45,4 @@ def build_graph() -> StateGraph:
     graph.add_conditional_edges("doc_qa", route_doc_qa, ["qa_tools", "__end__"])
     graph.add_edge("qa_tools", "doc_qa")
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
