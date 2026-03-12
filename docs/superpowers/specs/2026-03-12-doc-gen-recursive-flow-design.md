@@ -52,9 +52,9 @@ A pure analysis step between reading and writing. The LLM produces a structured 
 
 Added responsibility: convert Task 2's analysis into a Mermaid flowchart:
 
-- Main path: rectangle nodes `[step description]`
-- Decisions/branches: diamond nodes `{condition}`
-- Error exits: rounded nodes `(error_code: description)`
+- Main path: rectangle nodes `["step description"]`
+- Branches/conditions: use edge labels (`-->|condition|`) rather than diamond nodes (avoids `{`/`}` brace-escaping conflicts with `ChatPromptTemplate`)
+- Error exits: rounded nodes `("error_code: description")`
 - Success path flows top-down; error branches go left or right
 - Error codes in the flowchart must match the Error Codes table exactly
 
@@ -99,7 +99,8 @@ flowchart TD
 ### Mermaid Syntax Rules
 
 - Always quote node labels with double quotes to avoid syntax conflicts with special characters
-- Use `["label"]` for step nodes, `{"label"}` for decision nodes, `("label")` for error exit nodes
+- Use `["label"]` for step nodes, `("label")` for error exit nodes
+- Use edge labels (`-->|condition|`) for branching instead of diamond nodes (avoids brace-escaping issues with `ChatPromptTemplate`)
 - Keep node labels concise; use numbered steps for readability
 
 ### Quality Rules Added
