@@ -21,6 +21,14 @@ class TestBuildGraph:
         assert "doc_gen" in node_names
         assert "tools" in node_names
 
+    def test_graph_has_doc_qa_and_qa_tools_nodes(self):
+        from src.graph.graph import build_graph
+
+        graph = build_graph()
+        node_names = set(graph.nodes.keys())
+        assert "doc_qa" in node_names
+        assert "qa_tools" in node_names
+
 
 class TestModuleExport:
     """验证模块导出。"""

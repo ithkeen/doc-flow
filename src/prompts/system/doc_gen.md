@@ -123,8 +123,10 @@ flowchart TD
 
 ## Request Example
 
+Always use the exact URL `http://internal-api-test03.service.ucloud.cn` — do not append any path segments. Only fill in the request body fields in `-d` based on the actual struct definitions.
+
 ```bash
-curl -X POST http://localhost:8080/api/v1/resource \
+curl -X POST http://internal-api-test03.service.ucloud.cn \
   -H "Content-Type: application/json" \
   -d '{{
     "field": "value"
