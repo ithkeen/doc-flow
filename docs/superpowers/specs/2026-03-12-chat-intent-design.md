@@ -65,17 +65,16 @@ async def chat(state: State, config: RunnableConfig) -> dict:
 
 ```python
 def route_by_intent(state: State) -> str:
-    intent = state.get("intent", "")
-    if intent == "doc_gen":
+    if state["intent"] == "doc_gen":
         return "doc_gen"
-    elif intent == "doc_qa":
+    if state["intent"] == "doc_qa":
         return "doc_qa"
-    elif intent == "chat":
+    if state["intent"] == "chat":
         return "chat"
     return END
 ```
 
-保留 `→ END` 作为安全兜底（JSON 解析失败等场景），正常情况下 `chat` 会捕获所有非 doc 意图。
+与现有代码风格一致：使用直接 key 访问（`state["intent"]`）而非 `.get()`，因为 `State` 是 `TypedDict`，`intent` 字段在 `intent_recognize` 节点中总会被设置。保留 `→ END` 作为安全兜底（JSON 解析失败等场景），正常情况下 `chat` 会捕获所有非 doc 意图。
 
 ### 3. 意图识别 Prompt 扩展
 
@@ -96,7 +95,7 @@ def route_by_intent(state: State) -> str:
 INTENT_LIST = "doc_gen, doc_qa, chat"
 ```
 
-更新常量以反映完整的意图列表。
+更新常量以反映完整的意图列表。注意：`INTENT_LIST` 当前在代码中仅作为声明性常量存在，未被任何函数或 prompt 模板引用。意图列表的实际定义在 `src/prompts/system/intent.md` 的 prompt 文本中。保留此常量是为了代码可读性和未来可能的引用。
 
 ### 5. `graph.py` 变更
 
@@ -155,6 +154,10 @@ graph.add_conditional_edges(
 
 ## Chainlit UI 适配 (`app.py`)
 
+### 欢迎消息
+
+欢迎消息有意不做更新。当前欢迎消息引导用户使用文档生成和文档问答功能，chat 作为兜底意图不需要显式提及——用户自然地发送任何消息即可触发。
+
 ### 流式输出
 
 ```python
@@ -171,8 +174,10 @@ if metadata["langgraph_node"] in ("doc_gen", "doc_qa", "chat")
 
 ```python
 # 改为
-"抱歉，我暂时无法理解你的意思。你可以让我为 Go 代码文件生成 API 文档，或者基于已有文档提问，也可以和我自由聊天。"
+"抱歉，我暂时无法理解你的意思。你可以让我进行文档生成、文档问答，也可以和我自由聊天。"
 ```
+
+注意保留 "文档生成" 和 "文档问答" 关键词，因为现有测试断言依赖这些关键词。
 
 ## 测试策略
 
@@ -185,24 +190,25 @@ if metadata["langgraph_node"] in ("doc_gen", "doc_qa", "chat")
 - `test_chat_does_not_bind_tools`：验证 LLM 没有调用 `.bind_tools()`
 - `test_chat_loads_prompt`：验证加载了 `"chat"` prompt
 - `test_chat_passes_message_history`：验证完整对话历史被传递给 LLM
+- `test_chat_passes_config_to_ainvoke`：验证 `config` 被正确传递给 `llm.ainvoke()`（Chainlit callback 集成的关键）
 
 **`TestRouteByIntent` 扩展：**
 - `test_route_by_intent_chat`：验证 `intent == "chat"` 时返回 `"chat"`
 
 ### `tests/graph/test_graph.py` 更新
 
-- 验证图中包含 `chat` 节点（节点总数从 5 增加到 6）
+- 验证图中包含 `chat` 节点（使用成员检查 `assert "chat" in node_names`，与现有测试风格一致）
 
 ### `tests/test_app.py` 扩展
 
 - 验证 `chat` 节点输出能被 Chainlit 正确流式展示
-- 更新 fallback 消息断言
+- 更新 fallback 消息断言（保留对 "文档生成"、"文档问答" 的断言，新增对 "聊天" 的断言）
 
 ## 文件变更清单
 
 | 文件 | 变更类型 | 说明 |
 |------|---------|------|
-| `src/graph/nodes.py` | 修改 | 新增 `chat` 节点函数；扩展 `INTENT_LIST`、`route_by_intent` |
+| `src/graph/nodes.py` | 修改 | 新增 `chat` 节点函数；更新 `INTENT_LIST`（声明性）、扩展 `route_by_intent` |
 | `src/graph/graph.py` | 修改 | 新增 `chat` 节点、`chat → END` 边；扩展 `route_by_intent` 出口列表 |
 | `src/prompts/system/chat.md` | 新建 | chat 系统 prompt |
 | `src/prompts/user/chat.md` | 新建 | chat 用户 prompt |
