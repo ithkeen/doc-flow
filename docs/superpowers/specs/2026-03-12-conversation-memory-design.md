@@ -7,7 +7,7 @@ Add session-level multi-turn conversation memory to doc-flow, enabling the agent
 ## Requirements
 
 - **Scope**: Current session only (in-memory, no persistence)
-- **Coverage**: All graph nodes (intent_recognize, doc_gen, doc_qa) see full conversation history
+- **Coverage**: Conversation history is available in graph state for all nodes. `doc_gen` and `doc_qa` pass full history to the LLM. `intent_recognize` continues to extract only the latest user message for intent classification (fresh prompt per turn), but gains implicit context because the checkpointer preserves state across turns.
 - **Environments**: Both Chainlit UI and LangGraph Dev Server
 - **History management**: No truncation or summarization; full history passed to LLM
 
@@ -24,9 +24,10 @@ This is the standard LangGraph pattern for conversation memory. Future upgrade t
 `build_graph()` accepts an optional `checkpointer` parameter:
 
 ```python
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 
-def build_graph(checkpointer=None) -> CompiledStateGraph:
+def build_graph(checkpointer: BaseCheckpointSaver | None = None) -> CompiledStateGraph:
     graph = StateGraph(State)
     # ... node and edge definitions unchanged ...
     return graph.compile(checkpointer=checkpointer)
@@ -34,13 +35,14 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
 
 - Default `None` preserves backward compatibility (single-turn, no memory)
 - Caller decides what checkpointer to inject
+- Return type annotation corrected from `StateGraph` to `CompiledStateGraph` (the current annotation is wrong — `compile()` returns `CompiledStateGraph`)
 - `State` definition unchanged — `messages` already uses `add_messages` reducer
 
 ### 2. Node Message Reading Adaptation (`src/graph/nodes.py`)
 
-**`intent_recognize`** — No change needed. Uses `state["messages"][-1].content`. With checkpointer, the new HumanMessage is appended to the end of the restored history, so `[-1]` still yields the latest user message.
+**`intent_recognize`** — No change needed. Uses `state["messages"][-1].content`. With checkpointer, `add_messages` appends the new `HumanMessage` to the restored history, so `[-1]` still yields the latest user message. This is safe because `intent_recognize` always runs first in the graph (immediately after START), before any AI or tool messages are appended in the current turn. Note: the intent LLM call itself only receives the formatted prompt (not full history), so intent classification is per-message, not context-aware. This is acceptable for the current intent categories (`doc_gen`, `doc_qa`).
 
-**`doc_gen`** — No change needed. Constructs `system_messages + state["messages"]` and passes to LLM. Multi-turn history is naturally included.
+**`doc_gen`** — No change needed. Constructs `system_messages + state["messages"]` and passes to LLM. Multi-turn history is naturally included. Note: `state["params"]` (from `intent_recognize`) uses last-write-wins (no reducer), so each turn overwrites params with fresh values — this is correct behavior.
 
 **`doc_qa`** — **Requires change**. Currently reads `state["messages"][0].content` to get user input. In multi-turn mode, `[0]` is the first-ever message, not the current one.
 
@@ -57,7 +59,9 @@ def _get_last_human_message(messages: list) -> str:
     return ""
 ```
 
-`doc_qa` calls `_get_last_human_message(state["messages"])` instead of `state["messages"][0].content`.
+`doc_qa` calls `_get_last_human_message(state["messages"])` instead of `state["messages"][0].content`. If the helper returns `""` (empty list or no HumanMessage), `doc_qa` proceeds with an empty user_input — the LLM will respond appropriately. A warning log is not needed since this scenario should not occur in normal operation.
+
+**Known pre-existing issue in `doc_qa`**: The current code injects `user_input` into the prompt template AND includes the same message in `state["messages"]`, causing the user question to appear twice in the LLM context. This duplication exists in the current single-turn implementation and is not introduced by this change. Fixing it is out of scope for this spec — it would require redesigning the `doc_qa` prompt template, which is a separate concern.
 
 ### 3. Chainlit Integration (`app.py`)
 
@@ -65,6 +69,7 @@ def _get_last_human_message(messages: list) -> str:
 from langgraph.checkpoint.memory import MemorySaver
 from uuid import uuid4
 
+# Module-level: persists across requests within the Chainlit process
 memory = MemorySaver()
 graph = build_graph(checkpointer=memory)
 
@@ -105,10 +110,14 @@ No changes to any prompt templates under `src/prompts/`. The `{user_input}` vari
 
 **`tests/graph/test_graph.py`**:
 - Test `build_graph(checkpointer=MemorySaver())` compiles successfully
-- Test multi-turn: invoke graph twice with same `thread_id`, verify second invocation sees history from first
+- Test multi-turn: mock LLM to return a fixed AIMessage. Invoke graph twice with the same `thread_id`. Assert that on the second invocation, the state's message list contains messages from the first invocation (e.g., verify message count or that the LLM's `ainvoke` receives prior messages)
 
 **`tests/graph/test_nodes.py`**:
-- Test `_get_last_human_message()` helper with various message lists
+- Test `_get_last_human_message()` helper:
+  - Normal case: list with HumanMessage + AIMessage + HumanMessage → returns last HumanMessage content
+  - Empty list → returns `""`
+  - List with only AIMessage/ToolMessage (no HumanMessage) → returns `""`
+  - Single HumanMessage → returns its content
 - Test `doc_qa` node with multi-message state correctly extracts last HumanMessage
 
 **`tests/test_app.py`**:
@@ -129,7 +138,7 @@ Per project convention: write failing test first, implement, verify green, commi
 
 | File | Change |
 |------|--------|
-| `src/graph/graph.py` | `build_graph()` accepts `checkpointer` param, passes to `compile()` |
+| `src/graph/graph.py` | `build_graph()` accepts `checkpointer` param, passes to `compile()`, fix return type annotation |
 | `src/graph/nodes.py` | Add `_get_last_human_message()`, update `doc_qa` to use it |
 | `app.py` | Create `MemorySaver`, generate `thread_id` per session, pass in config |
 | `tests/graph/test_graph.py` | Add checkpointer compilation and multi-turn tests |
