@@ -178,6 +178,29 @@ class TestOnMessageCoreFlow:
         assert "AI回答" in streamed
         assert "用户输入" not in streamed
 
+    @pytest.mark.asyncio
+    async def test_streams_chat_node_content(self, app_module):
+        """graph.astream yields AIMessageChunks from chat; content
+        must be forwarded via answer.stream_token()."""
+        app, mock_cl, mock_graph = app_module
+
+        chunks = [
+            (AIMessageChunk(content="你好！"), {"langgraph_node": "chat"}),
+            (AIMessageChunk(content="有什么想聊的吗？"), {"langgraph_node": "chat"}),
+        ]
+        mock_graph.astream = MagicMock(return_value=_astream_from(chunks))
+
+        user_msg = MagicMock()
+        user_msg.content = "你好"
+
+        await app.on_message(user_msg)
+
+        answer_obj = mock_cl.Message.return_value
+        calls = answer_obj.stream_token.call_args_list
+        streamed = [c.args[0] for c in calls]
+        assert "你好！" in streamed
+        assert "有什么想聊的吗？" in streamed
+
 
 # ===========================================================================
 # TestOnMessageEdgeCases
@@ -205,6 +228,7 @@ class TestOnMessageEdgeCases:
         # The fallback message should mention both capabilities
         assert "文档生成" in answer_obj.content
         assert "文档问答" in answer_obj.content
+        assert "聊天" in answer_obj.content
 
     @pytest.mark.asyncio
     async def test_handles_graph_error_gracefully(self, app_module):

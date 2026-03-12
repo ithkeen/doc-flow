@@ -58,7 +58,7 @@ async def on_message(message: cl.Message):
             if (
                 msg.content
                 and not isinstance(msg, HumanMessage)
-                and metadata["langgraph_node"] in ("doc_gen", "doc_qa")
+                and metadata["langgraph_node"] in ("doc_gen", "doc_qa", "chat")
             ):
                 await answer.stream_token(msg.content)
     except Exception:
@@ -66,6 +66,6 @@ async def on_message(message: cl.Message):
         answer.content = "抱歉，处理过程中出现错误，请稍后重试。"
 
     if not answer.content:
-        answer.content = "抱歉，我目前支持文档生成和文档问答功能。你可以让我为某个文件生成文档，或者基于已有文档提问。"
+        answer.content = "抱歉，我暂时无法理解你的意思。你可以让我进行文档生成、文档问答，也可以和我自由聊天。"
 
     await answer.send()
