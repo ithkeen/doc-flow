@@ -42,6 +42,12 @@ def app_module():
     mock_cl.on_chat_start = lambda fn: fn
     mock_cl.on_message = lambda fn: fn
 
+    # cl.user_session: simple dict-backed mock
+    _session_store = {}
+    mock_cl.user_session = MagicMock()
+    mock_cl.user_session.set = MagicMock(side_effect=lambda k, v: _session_store.__setitem__(k, v))
+    mock_cl.user_session.get = MagicMock(side_effect=lambda k: _session_store.get(k))
+
     # -- mock graph ------------------------------------------------------------
     mock_graph = MagicMock()
     mock_graph.astream = AsyncMock()  # default: returns empty async iterator
@@ -222,3 +228,55 @@ class TestOnMessageEdgeCases:
         # Must be the error-path message, not the fallback message
         assert "错误" in answer_obj.content
         assert "稍后重试" in answer_obj.content
+
+
+# ===========================================================================
+# TestOnChatStart
+# ===========================================================================
+
+class TestOnChatStart:
+    """on_chat_start 会话初始化测试。"""
+
+    @pytest.mark.asyncio
+    async def test_sets_thread_id_in_session(self, app_module):
+        """on_chat_start 应在 cl.user_session 中设置 thread_id。"""
+        app, mock_cl, mock_graph = app_module
+
+        await app.on_chat_start()
+
+        # Verify cl.user_session.set was called with "thread_id" and a string value
+        set_calls = [c for c in mock_cl.user_session.set.call_args_list if c.args[0] == "thread_id"]
+        assert len(set_calls) == 1
+        thread_id = set_calls[0].args[1]
+        assert isinstance(thread_id, str)
+        assert len(thread_id) > 0
+
+
+# ===========================================================================
+# TestOnMessageThreadId
+# ===========================================================================
+
+class TestOnMessageThreadId:
+    """on_message 传递 thread_id 测试。"""
+
+    @pytest.mark.asyncio
+    async def test_passes_thread_id_in_config(self, app_module):
+        """on_message 应在 config.configurable 中传入 thread_id。"""
+        app, mock_cl, mock_graph = app_module
+
+        # Simulate on_chat_start to set thread_id
+        await app.on_chat_start()
+
+        mock_graph.astream = MagicMock(return_value=_astream_from([]))
+
+        user_msg = MagicMock()
+        user_msg.content = "请为 ./handler 生成文档"
+
+        await app.on_message(user_msg)
+
+        # Inspect the config passed to graph.astream
+        astream_call = mock_graph.astream.call_args
+        config = astream_call.kwargs.get("config") or astream_call[1].get("config")
+        assert "configurable" in config
+        assert "thread_id" in config["configurable"]
+        assert isinstance(config["configurable"]["thread_id"], str)

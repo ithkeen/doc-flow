@@ -1,23 +1,29 @@
 """Chainlit 聊天入口。
 
-通过 `chainlit run src/app.py` 启动，提供浏览器聊天界面。
+通过 `chainlit run app.py` 启动，提供浏览器聊天界面。
 """
+
+from uuid import uuid4
 
 import chainlit as cl
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import MemorySaver
 
 from src.graph import build_graph
 from src.logs import get_logger
 
 logger = get_logger(__name__)
 
-graph = build_graph()
+# Module-level: persists across requests within the Chainlit process
+memory = MemorySaver()
+graph = build_graph(checkpointer=memory)
 
 
 @cl.on_chat_start
 async def on_chat_start():
-    """新会话开始时发送欢迎消息。"""
+    """新会话开始时生成 thread_id 并发送欢迎消息。"""
+    cl.user_session.set("thread_id", str(uuid4()))
     await cl.Message(
         content="你好！我是 doc-flow，你可以让我为 Go 源码文件生成 API 文档，或者基于已有文档提问。"
     ).send()
@@ -26,6 +32,8 @@ async def on_chat_start():
 @cl.on_message
 async def on_message(message: cl.Message):
     """处理用户消息，流式输出 graph 结果。"""
+    thread_id = cl.user_session.get("thread_id")
+
     cb = cl.LangchainCallbackHandler(
         to_ignore=[
             "ChannelRead",
@@ -35,7 +43,10 @@ async def on_message(message: cl.Message):
             "_execute",
         ]
     )
-    config = RunnableConfig(callbacks=[cb])
+    config = RunnableConfig(
+        callbacks=[cb],
+        configurable={"thread_id": thread_id},
+    )
     answer = cl.Message(content="")
 
     try:
