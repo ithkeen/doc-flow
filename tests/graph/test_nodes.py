@@ -314,6 +314,40 @@ class TestDocQa:
         assert invoke_args[0].type == "system"
         assert invoke_args[-1] == human_msg
 
+    @pytest.mark.asyncio
+    @patch("src.graph.nodes.ChatOpenAI")
+    async def test_uses_last_human_message_in_multi_turn(self, mock_chat_cls):
+        """多轮对话时，doc_qa 应使用最后一条 HumanMessage，而非 messages[0]。"""
+        from src.graph.nodes import doc_qa
+
+        mock_llm = MagicMock()
+        mock_llm_with_tools = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm_with_tools
+        mock_llm_with_tools.ainvoke = AsyncMock(
+            return_value=AIMessage(content="done")
+        )
+        mock_chat_cls.return_value = mock_llm
+
+        state = {
+            "messages": [
+                HumanMessage(content="第一轮问题"),
+                AIMessage(content="第一轮回答"),
+                HumanMessage(content="第二轮问题"),
+            ],
+            "intent": "doc_qa",
+            "confidence": 0.9,
+            "params": {},
+        }
+
+        await doc_qa(state, RunnableConfig())
+
+        invoke_args = mock_llm_with_tools.ainvoke.call_args[0][0]
+        # system prompt 中的 user_input 应包含"第二轮问题"而非"第一轮问题"
+        system_and_user_prompt = invoke_args[0:2]  # system + user prompt messages
+        user_prompt_content = system_and_user_prompt[1].content
+        assert "第二轮问题" in user_prompt_content
+        assert "第一轮问题" not in user_prompt_content
+
 
 class TestRouteByIntent:
     """意图路由函数测试。"""

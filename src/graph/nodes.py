@@ -98,7 +98,7 @@ async def doc_qa(state: State, config: RunnableConfig) -> dict:
     与 qa_tools ToolNode 形成 ReAct 循环。
     """
     prompt = load_prompt("doc_qa")
-    user_input = state["messages"][0].content
+    user_input = _get_last_human_message(state["messages"])
 
     system_messages = prompt.format_messages(user_input=user_input)
 
