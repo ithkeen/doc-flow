@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from langgraph.graph import START, StateGraph
+from langgraph.graph import START, END, StateGraph
 from langgraph.prebuilt import ToolNode
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -15,6 +15,7 @@ from src.graph.nodes import (
     TOOLS,
     QA_TOOLS,
     State,
+    chat,
     doc_gen,
     doc_qa,
     intent_recognize,
@@ -37,12 +38,14 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None) -> CompiledStat
     graph.add_node("tools", ToolNode(tools=TOOLS))
     graph.add_node("doc_qa", doc_qa)
     graph.add_node("qa_tools", ToolNode(tools=QA_TOOLS))
+    graph.add_node("chat", chat)
 
     graph.add_edge(START, "intent_recognize")
-    graph.add_conditional_edges("intent_recognize", route_by_intent, ["doc_gen", "doc_qa", "__end__"])
+    graph.add_conditional_edges("intent_recognize", route_by_intent, ["doc_gen", "doc_qa", "chat", "__end__"])
     graph.add_conditional_edges("doc_gen", route_doc_gen, ["tools", "__end__"])
     graph.add_edge("tools", "doc_gen")
     graph.add_conditional_edges("doc_qa", route_doc_qa, ["qa_tools", "__end__"])
     graph.add_edge("qa_tools", "doc_qa")
+    graph.add_edge("chat", END)
 
     return graph.compile(checkpointer=checkpointer)

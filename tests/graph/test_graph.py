@@ -33,6 +33,13 @@ class TestBuildGraph:
         assert "doc_qa" in node_names
         assert "qa_tools" in node_names
 
+    def test_graph_has_chat_node(self):
+        from src.graph.graph import build_graph
+
+        graph = build_graph()
+        node_names = set(graph.nodes.keys())
+        assert "chat" in node_names
+
 
 class TestModuleExport:
     """验证模块导出。"""
