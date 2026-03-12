@@ -31,7 +31,7 @@ class State(TypedDict):
     params: dict
 
 
-INTENT_LIST = "doc_gen"
+INTENT_LIST = "doc_gen, doc_qa"
 
 
 async def intent_recognize(state: State, config: RunnableConfig) -> dict:
@@ -110,6 +110,8 @@ def route_by_intent(state: State) -> str:
     """根据意图识别结果路由到对应节点。"""
     if state["intent"] == "doc_gen":
         return "doc_gen"
+    if state["intent"] == "doc_qa":
+        return "doc_qa"
     return END
 
 
@@ -118,4 +120,12 @@ def route_doc_gen(state: State) -> str:
     last_message = state["messages"][-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         return "tools"
+    return END
+
+
+def route_doc_qa(state: State) -> str:
+    """根据 LLM 是否发起工具调用决定下一步。"""
+    last_message = state["messages"][-1]
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        return "qa_tools"
     return END

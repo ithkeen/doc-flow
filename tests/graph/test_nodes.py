@@ -253,6 +253,12 @@ class TestRouteByIntent:
         state = {"intent": "", "confidence": 0.0, "params": {}, "messages": []}
         assert route_by_intent(state) == END
 
+    def test_routes_to_doc_qa_for_doc_qa_intent(self):
+        from src.graph.nodes import route_by_intent
+
+        state = {"intent": "doc_qa", "confidence": 0.9, "params": {}, "messages": []}
+        assert route_by_intent(state) == "doc_qa"
+
 
 class TestRouteDocGen:
     """doc_gen 路由函数测试。"""
@@ -271,3 +277,25 @@ class TestRouteDocGen:
         ai_msg = AIMessage(content="文档生成完毕。")
         state = {"messages": [ai_msg], "intent": "doc_gen", "confidence": 0.9, "params": {}}
         assert route_doc_gen(state) == END
+
+
+class TestRouteDocQa:
+    """doc_qa 路由函数测试。"""
+
+    def test_routes_to_qa_tools_when_tool_calls_present(self):
+        from src.graph.nodes import route_doc_qa
+
+        ai_msg = AIMessage(
+            content="",
+            tool_calls=[{"name": "read_document", "args": {"module_name": "user", "api_name": "CreateUser"}, "id": "1"}],
+        )
+        state = {"messages": [ai_msg], "intent": "doc_qa", "confidence": 0.9, "params": {}}
+        assert route_doc_qa(state) == "qa_tools"
+
+    def test_routes_to_end_when_no_tool_calls(self):
+        from src.graph.nodes import route_doc_qa
+        from langgraph.graph import END
+
+        ai_msg = AIMessage(content="根据文档，CreateUser 接口需要以下参数...")
+        state = {"messages": [ai_msg], "intent": "doc_qa", "confidence": 0.9, "params": {}}
+        assert route_doc_qa(state) == END
