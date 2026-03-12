@@ -38,13 +38,31 @@ QA_TOOLS = [read_document, list_documents]
 
 ```python
 async def doc_qa(state: State, config: RunnableConfig) -> dict:
+    prompt = load_prompt("doc_qa")
+    user_input = state["messages"][-1].content
+
+    system_messages = prompt.format_messages(user_input=user_input)
+
+    llm = ChatOpenAI(
+        base_url=settings.llm.base_url,
+        api_key=settings.llm.api_key,
+        model=settings.llm.model,
+    )
+    llm_with_tools = llm.bind_tools(QA_TOOLS)
+
+    all_messages = system_messages + state["messages"]
+    response = await llm_with_tools.ainvoke(all_messages, config=config)
+
+    logger.info("文档问答节点调用完成")
+    return {"messages": [response]}
 ```
 
 与 `doc_gen` 结构一致：
-1. 调用 `load_prompt("doc_qa")` 加载专用 prompt
-2. 使用 `ChatOpenAI` 并绑定 `QA_TOOLS`
-3. 通过 `ainvoke` 异步调用 LLM
-4. 返回 `{"messages": [response]}`
+1. 调用 `load_prompt("doc_qa")` 加载专用 prompt，传入 `user_input` 模板变量
+2. 使用 `system_messages + state["messages"]` 拼接消息列表（system prompt 在前，会话消息在后，确保 ReAct 循环的工具调用/响应消息被保留）
+3. 使用 `ChatOpenAI` 并绑定 `QA_TOOLS`
+4. 通过 `ainvoke` 异步调用 LLM
+5. 记录日志并返回 `{"messages": [response]}`
 
 ### 3. `route_doc_qa` 条件路由
 
@@ -56,6 +74,10 @@ def route_doc_qa(state: State) -> str:
 
 ### 4. `route_by_intent` 扩展
 
+需要两处独立的变更：
+
+**（a）`nodes.py` — 扩展意图列表和路由函数：**
+
 ```python
 INTENT_LIST = "doc_gen, doc_qa"
 ```
@@ -65,23 +87,46 @@ INTENT_LIST = "doc_gen, doc_qa"
 - `intent == "doc_qa"` → `doc_qa` 节点
 - 其他 → `END`
 
+**（b）`src/prompts/system/intent.md` — 增加意图描述：**
+
+在意图列表的描述中补充 `doc_qa` 的说明，让 LLM 能准确区分两种意图。具体做法是在 `intent.md` 中将 `{intent_list}` 周围的文本扩展为带描述的列表格式：
+
+```
+可用意图：
+- doc_gen：用户要求为某个文件或模块生成 API 文档
+- doc_qa：用户基于已有文档提问（查询接口参数、用法、错误码等）
+```
+
+这两处变更是互补的：`INTENT_LIST` 用于代码内的路由判断，`intent.md` 的描述用于 LLM 的意图分类。
+
 ### 5. `graph.py` 变更
 
+更新 import 语句，新增节点和边：
+
 ```python
+# import 新增
+from src.graph.nodes import (
+    TOOLS,
+    QA_TOOLS,        # 新增
+    State,
+    doc_gen,
+    doc_qa,           # 新增
+    intent_recognize,
+    route_by_intent,
+    route_doc_gen,
+    route_doc_qa,     # 新增
+)
+
 # 新增节点
 graph.add_node("doc_qa", doc_qa)
 graph.add_node("qa_tools", ToolNode(QA_TOOLS))
 
-# 新增边
-graph.add_conditional_edges("doc_qa", route_doc_qa, {"qa_tools": "qa_tools", END: END})
+# 新增边（使用与现有代码一致的 list 语法）
+graph.add_conditional_edges("doc_qa", route_doc_qa, ["qa_tools", "__end__"])
 graph.add_edge("qa_tools", "doc_qa")
 
-# route_by_intent 扩展
-graph.add_conditional_edges(
-    "intent_recognize",
-    route_by_intent,
-    {"doc_gen": "doc_gen", "doc_qa": "doc_qa", END: END},
-)
+# route_by_intent 扩展（原 list 中追加 "doc_qa"）
+graph.add_conditional_edges("intent_recognize", route_by_intent, ["doc_gen", "doc_qa", "__end__"])
 ```
 
 ### 6. State
@@ -111,13 +156,15 @@ graph.add_conditional_edges(
 用户问题：{user_input}
 ```
 
-### 意图识别 Prompt 调整 (`src/prompts/system/intent.md`)
+### 意图识别 Prompt 调整
 
-在意图列表描述中增加 `doc_qa`：
-- `doc_gen`：用户要求为某个文件或模块生成文档
-- `doc_qa`：用户基于已有文档提问（查询接口参数、用法、错误码等）
+见组件设计第 4 节（`route_by_intent` 扩展 b 部分）。
 
 ## Chainlit UI 适配 (`app.py`)
+
+### 欢迎消息
+
+`on_chat_start` 中的欢迎消息需要更新以反映新增的问答能力。
 
 ### 流式输出
 
@@ -131,7 +178,17 @@ if metadata["langgraph_node"] in ("doc_gen", "doc_qa")
 
 ### Fallback 消息
 
-当意图无法识别时，更新 fallback 消息以反映新增的问答能力。
+当意图无法识别时，更新 fallback 消息：
+
+```python
+# 当前
+"抱歉，我目前只支持文档生成功能。请告诉我你想为哪个目录生成文档。"
+
+# 改为
+"抱歉，我目前支持文档生成和文档问答功能。你可以让我为某个文件生成文档，或者基于已有文档提问。"
+```
+
+注意：`tests/test_app.py` 中有 fallback 消息的断言，需要同步更新。
 
 ## 测试策略
 
@@ -162,8 +219,9 @@ if metadata["langgraph_node"] in ("doc_gen", "doc_qa")
 | `src/prompts/system/doc_qa.md` | 新建 | doc_qa 系统 prompt |
 | `src/prompts/user/doc_qa.md` | 新建 | doc_qa 用户 prompt |
 | `src/prompts/system/intent.md` | 修改 | 意图列表描述中增加 `doc_qa` |
-| `app.py` | 修改 | 流式输出支持 `doc_qa` 节点 |
+| `app.py` | 修改 | 流式输出支持 `doc_qa` 节点，更新 fallback 消息 |
 | `tests/graph/test_nodes.py` | 修改 | 新增 doc_qa 相关测试 |
 | `tests/graph/test_graph.py` | 修改 | 新增图结构验证 |
+| `tests/test_app.py` | 修改 | 新增 doc_qa 流式输出测试，更新 fallback 消息断言 |
 
 **不涉及变更的文件**：`src/tools/` 全部工具代码零改动，`src/config/` 无变更。
