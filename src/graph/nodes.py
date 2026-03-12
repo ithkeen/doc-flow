@@ -43,7 +43,6 @@ async def intent_recognize(state: State, config: RunnableConfig) -> dict:
     user_input = state["messages"][-1].content
 
     messages = prompt.format_messages(
-        intent_list=INTENT_LIST,
         user_input=user_input,
     )
 
