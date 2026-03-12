@@ -39,7 +39,7 @@ QA_TOOLS = [read_document, list_documents]
 ```python
 async def doc_qa(state: State, config: RunnableConfig) -> dict:
     prompt = load_prompt("doc_qa")
-    user_input = state["messages"][-1].content
+    user_input = state["messages"][0].content
 
     system_messages = prompt.format_messages(user_input=user_input)
 
