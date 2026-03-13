@@ -66,11 +66,7 @@ async def intent_recognize(state: State, config: RunnableConfig) -> dict:
         user_input=user_input,
     )
 
-    llm = ChatOpenAI(
-        base_url=settings.llm.base_url,
-        api_key=settings.llm.api_key,
-        model=settings.llm.model,
-    )
+    llm = _get_node_llm("intent")
     response = await llm.ainvoke(messages, config=config)
 
     raw = response.content
@@ -122,11 +118,7 @@ async def doc_qa(state: State, config: RunnableConfig) -> dict:
 
     system_messages = prompt.format_messages(user_input=user_input)
 
-    llm = ChatOpenAI(
-        base_url=settings.llm.base_url,
-        api_key=settings.llm.api_key,
-        model=settings.llm.model,
-    )
+    llm = _get_node_llm("doc_qa")
     llm_with_tools = llm.bind_tools(QA_TOOLS)
 
     all_messages = system_messages + state["messages"]
@@ -147,11 +139,7 @@ async def doc_gen(state: State, config: RunnableConfig) -> dict:
 
     system_messages = prompt.format_messages(file_path=file_path)
 
-    llm = ChatOpenAI(
-        base_url=settings.llm.base_url,
-        api_key=settings.llm.api_key,
-        model=settings.llm.model,
-    )
+    llm = _get_node_llm("doc_gen")
     llm_with_tools = llm.bind_tools(TOOLS)
 
     all_messages = system_messages + state["messages"]
@@ -172,11 +160,7 @@ async def chat(state: State, config: RunnableConfig) -> dict:
 
     system_messages = prompt.format_messages(user_input=user_input)
 
-    llm = ChatOpenAI(
-        base_url=settings.llm.base_url,
-        api_key=settings.llm.api_key,
-        model=settings.llm.model,
-    )
+    llm = _get_node_llm("chat")
 
     all_messages = system_messages + state["messages"]
     response = await llm.ainvoke(all_messages, config=config)
