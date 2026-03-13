@@ -18,9 +18,11 @@ class TestFindFunction:
 
         result = json.loads(find_function.invoke({"function_name": "buyResourcePostPaid", "directory": "service"}))
         assert result["success"] is True
-        assert result["payload"]["file"].endswith("service/buy.go")
-        assert result["payload"]["line"] == 3
-        assert "buyResourcePostPaid" in result["payload"]["content"]
+        assert isinstance(result["payload"], list)
+        assert len(result["payload"]) == 1
+        assert result["payload"][0]["file"].endswith("service/buy.go")
+        assert result["payload"][0]["line"] == 3
+        assert "buyResourcePostPaid" in result["payload"][0]["content"]
 
     def test_finds_method_with_receiver(self, tmp_path, monkeypatch):
         monkeypatch.setattr(settings, "agent_work_dir", str(tmp_path))
@@ -33,8 +35,10 @@ class TestFindFunction:
 
         result = json.loads(find_function.invoke({"function_name": "ProcessOrder", "directory": "service"}))
         assert result["success"] is True
-        assert result["payload"]["line"] == 3
-        assert "ProcessOrder" in result["payload"]["content"]
+        assert isinstance(result["payload"], list)
+        assert len(result["payload"]) == 1
+        assert result["payload"][0]["line"] == 3
+        assert "ProcessOrder" in result["payload"][0]["content"]
 
     def test_returns_fail_when_not_found(self, tmp_path, monkeypatch):
         monkeypatch.setattr(settings, "agent_work_dir", str(tmp_path))
@@ -94,4 +98,29 @@ class TestFindFunction:
 
         result = json.loads(find_function.invoke({"function_name": "Target", "directory": "service"}))
         assert result["success"] is True
-        assert result["payload"]["line"] == 3
+        assert isinstance(result["payload"], list)
+        assert len(result["payload"]) == 1
+        assert result["payload"][0]["line"] == 3
+
+    def test_returns_all_matches_across_files(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(settings, "agent_work_dir", str(tmp_path))
+
+        pkg_a = tmp_path / "pkg_a"
+        pkg_a.mkdir()
+        (pkg_a / "handler.go").write_text(
+            "package pkg_a\n\nfunc BuyResource(ctx context.Context) error {\n\treturn nil\n}\n"
+        )
+
+        pkg_b = tmp_path / "pkg_b"
+        pkg_b.mkdir()
+        (pkg_b / "handler.go").write_text(
+            "package pkg_b\n\nfunc BuyResource(ctx context.Context) error {\n\treturn nil\n}\n"
+        )
+
+        result = json.loads(find_function.invoke({"function_name": "BuyResource"}))
+        assert result["success"] is True
+        assert isinstance(result["payload"], list)
+        assert len(result["payload"]) == 2
+        files = {m["file"] for m in result["payload"]}
+        assert any("pkg_a" in f for f in files)
+        assert any("pkg_b" in f for f in files)

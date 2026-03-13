@@ -27,7 +27,7 @@ def find_function(function_name: str, directory: str = ".") -> str:
         directory: 搜索起始目录，默认为 "."
 
     Returns:
-        JSON envelope，payload 包含 file（文件路径）、line（行号）、content（该行内容）。
+        JSON envelope，payload 为匹配列表，每个元素包含 file（文件路径）、line（行号）、content（该行内容）。
     """
     if not function_name or not function_name.strip():
         return fail("函数名不能为空")
@@ -49,6 +49,8 @@ def find_function(function_name: str, directory: str = ".") -> str:
         f for f in dir_path.rglob("*.go") if not f.name.endswith("_test.go")
     )
 
+    matches = []
+
     for go_file in go_files:
         try:
             content = go_file.read_text(encoding="utf-8")
@@ -63,10 +65,11 @@ def find_function(function_name: str, directory: str = ".") -> str:
             if pattern.match(line):
                 rel_path = str(go_file.relative_to(Path(settings.agent_work_dir)))
                 logger.info("找到函数 %s 定义：%s:%d", function_name, rel_path, line_num)
-                return ok(
-                    "找到函数定义",
-                    payload={"file": rel_path, "line": line_num, "content": line.strip()},
-                )
+                matches.append({"file": rel_path, "line": line_num, "content": line.strip()})
 
-    logger.info("未找到函数 %s 的定义", function_name)
-    return fail(f"未找到函数 {function_name} 的定义")
+    if not matches:
+        logger.info("未找到函数 %s 的定义", function_name)
+        return fail(f"未找到函数 {function_name} 的定义")
+
+    logger.info("找到函数 %s 共 %d 处定义", function_name, len(matches))
+    return ok(f"找到 {len(matches)} 处函数定义", payload=matches)
