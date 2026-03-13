@@ -5,7 +5,7 @@ import sys
 import pytest
 from pydantic import ValidationError
 
-from src.config.settings import LLMSettings, LangSmithSettings, Settings
+from src.config.settings import LLMSettings, LangSmithSettings, NodeLLMSettings, Settings
 
 
 class TestLLMSettings:
@@ -120,5 +120,52 @@ class TestSettingsSingleton:
         s2 = src.config.settings
 
         assert s1 is s2
+
+
+class TestNodeLLMSettings:
+    """节点级 LLM 配置测试。"""
+
+    def test_all_fields_default_to_none(self, monkeypatch):
+        """未设置环境变量时，所有字段应为 None。"""
+        monkeypatch.delenv("INTENT_LLM_BASE_URL", raising=False)
+        monkeypatch.delenv("INTENT_LLM_API_KEY", raising=False)
+        monkeypatch.delenv("INTENT_LLM_MODEL", raising=False)
+
+        s = NodeLLMSettings(_env_file=None, _env_prefix="INTENT_LLM_")
+        assert s.base_url is None
+        assert s.api_key is None
+        assert s.model is None
+
+    def test_loads_from_env_with_prefix(self, monkeypatch):
+        """设置环境变量时，应正确加载。"""
+        monkeypatch.setenv("INTENT_LLM_MODEL", "gpt-4o-mini")
+        monkeypatch.setenv("INTENT_LLM_BASE_URL", "https://custom.api/v1")
+        monkeypatch.setenv("INTENT_LLM_API_KEY", "intent-key")
+
+        s = NodeLLMSettings(_env_file=None, _env_prefix="INTENT_LLM_")
+        assert s.model == "gpt-4o-mini"
+        assert s.base_url == "https://custom.api/v1"
+        assert s.api_key == "intent-key"
+
+    def test_different_prefixes_load_independently(self, monkeypatch):
+        """不同 env_prefix 的实例应独立加载各自的环境变量。"""
+        monkeypatch.setenv("INTENT_LLM_MODEL", "gpt-4o-mini")
+        monkeypatch.setenv("DOC_GEN_LLM_MODEL", "gpt-4")
+        monkeypatch.delenv("CHAT_LLM_MODEL", raising=False)
+
+        intent = NodeLLMSettings(_env_file=None, _env_prefix="INTENT_LLM_")
+        doc_gen = NodeLLMSettings(_env_file=None, _env_prefix="DOC_GEN_LLM_")
+        chat = NodeLLMSettings(_env_file=None, _env_prefix="CHAT_LLM_")
+
+        assert intent.model == "gpt-4o-mini"
+        assert doc_gen.model == "gpt-4"
+        assert chat.model is None
+
+    def test_ignores_extra_env_vars(self, monkeypatch):
+        """带有匹配前缀但不在字段中的环境变量应被忽略（extra=ignore）。"""
+        monkeypatch.setenv("INTENT_LLM_TEMPERATURE", "0.5")
+
+        s = NodeLLMSettings(_env_file=None, _env_prefix="INTENT_LLM_")
+        assert not hasattr(s, "temperature")
 
 

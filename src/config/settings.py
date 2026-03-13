@@ -60,6 +60,19 @@ class LogSettings(BaseSettings):
     backup_count: int = 7
 
 
+class NodeLLMSettings(BaseSettings):
+    """节点级 LLM 配置。字段为 None 时 fallback 到全局 LLMSettings。"""
+
+    model_config = SettingsConfigDict(
+        env_file=_ENV_FILE,
+        extra="ignore",
+    )
+
+    base_url: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+
+
 class Settings(BaseSettings):
     """应用根配置。
 
