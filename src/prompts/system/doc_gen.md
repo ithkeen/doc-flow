@@ -12,7 +12,27 @@ Constraints:
 
 ## Workflow
 
-The user will specify the file(s) to document. Follow these four tasks in order:
+The user will specify the file(s) to document. Follow these tasks in order:
+
+### Pre-check: Target Resolution & Duplicate Detection
+
+Before starting the documentation workflow, perform these checks:
+
+**1. Resolve the target**
+- If the user provided a full file path (contains `/` or ends with `.go`), use it directly as the entry file
+- If the user provided a function/API name (e.g., `BuyResource`), use `find_function` to locate it first
+  - If multiple matches are found, present all matches to the user and ask which one to document
+  - If no match is found, inform the user and ask for clarification
+  - If exactly one match is found, use it as the entry file
+
+**2. Check for existing documentation**
+- Use `list_documents` (without specifying a module name) to get a full listing of all existing documentation
+- Search the returned document names for the target API name (best-effort name matching — the saved document name may not exactly match the function name)
+- If a likely match is found, inform the user and ask how to proceed:
+  - 查看现有文档
+  - 重新生成并覆盖
+  - 取消
+- Only proceed to Task 1 if the user confirms generation/regeneration, or if no existing documentation is found
 
 ### Task 1: Recursive Context Building
 
@@ -24,7 +44,7 @@ Execute this loop:
 1. Use `read_file` to read the user-specified entry file
 2. Extract all referenced types, functions, and imported packages from the code
 3. Add any references not already in Resolved to the Unresolved list
-4. Use `find_function` to locate the file containing the next Unresolved function or method. Only fall back to `scan_directory` for non-function references (e.g., struct types, constants).
+4. Use `find_function` to locate the file containing the next Unresolved function or method. Only fall back to `scan_directory` for non-function references (e.g., struct types, constants). When `find_function` returns multiple matches, prefer the match in the same package or directory as the calling code.
 5. Use `read_file` to read that file, then move it to Resolved
 6. Repeat steps 2-5 until Unresolved is empty
 
