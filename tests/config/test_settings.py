@@ -98,6 +98,31 @@ class TestSettings:
         s = Settings(_env_file=None)
         assert s.agent_work_dir == "/home/user/go-project"
 
+    def test_node_llm_defaults_to_none_fields(self, monkeypatch):
+        """未设置节点级环境变量时，Settings 应包含全 None 的 NodeLLMSettings。"""
+        monkeypatch.setenv("LLM_API_KEY", "test-key")
+        monkeypatch.delenv("INTENT_LLM_MODEL", raising=False)
+
+        s = Settings(_env_file=None)
+        assert s.intent_llm.model is None
+        assert s.intent_llm.base_url is None
+        assert s.intent_llm.api_key is None
+        assert s.doc_gen_llm.model is None
+        assert s.doc_qa_llm.model is None
+        assert s.chat_llm.model is None
+
+    def test_node_llm_loads_from_env(self, monkeypatch):
+        """设置节点级环境变量时，Settings 应正确加载。"""
+        monkeypatch.setenv("LLM_API_KEY", "test-key")
+        monkeypatch.setenv("INTENT_LLM_MODEL", "gpt-4o-mini")
+        monkeypatch.setenv("DOC_GEN_LLM_MODEL", "gpt-4")
+
+        s = Settings(_env_file=None)
+        assert s.intent_llm.model == "gpt-4o-mini"
+        assert s.doc_gen_llm.model == "gpt-4"
+        assert s.doc_qa_llm.model is None
+        assert s.chat_llm.model is None
+
 
 class TestSettingsSingleton:
     """Singleton 导入测试。"""

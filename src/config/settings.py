@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     llm: LLMSettings = Field(default_factory=LLMSettings)
     langsmith: LangSmithSettings = Field(default_factory=LangSmithSettings)
     log: LogSettings = Field(default_factory=LogSettings)
+    intent_llm: NodeLLMSettings = Field(default_factory=NodeLLMSettings)
+    doc_gen_llm: NodeLLMSettings = Field(default_factory=NodeLLMSettings)
+    doc_qa_llm: NodeLLMSettings = Field(default_factory=NodeLLMSettings)
+    chat_llm: NodeLLMSettings = Field(default_factory=NodeLLMSettings)
 
     def __init__(self, **kwargs: Any) -> None:
         """构造 Settings，将 _env_file 传递给子配置。"""
@@ -102,5 +106,13 @@ class Settings(BaseSettings):
             kwargs["langsmith"] = LangSmithSettings(_env_file=env_file)
         if "log" not in kwargs:
             kwargs["log"] = LogSettings(_env_file=env_file)
+        if "intent_llm" not in kwargs:
+            kwargs["intent_llm"] = NodeLLMSettings(_env_file=env_file, _env_prefix="INTENT_LLM_")
+        if "doc_gen_llm" not in kwargs:
+            kwargs["doc_gen_llm"] = NodeLLMSettings(_env_file=env_file, _env_prefix="DOC_GEN_LLM_")
+        if "doc_qa_llm" not in kwargs:
+            kwargs["doc_qa_llm"] = NodeLLMSettings(_env_file=env_file, _env_prefix="DOC_QA_LLM_")
+        if "chat_llm" not in kwargs:
+            kwargs["chat_llm"] = NodeLLMSettings(_env_file=env_file, _env_prefix="CHAT_LLM_")
 
         super().__init__(**kwargs)
