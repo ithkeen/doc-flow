@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-doc-flow is an AI-powered documentation generator that analyzes Go source code and produces structured Markdown API docs. It uses a LangGraph StateGraph with a ReAct agent loop: intent recognition routes to doc generation, which calls tools in a loop until complete. Entry point `app.py` (project root) serves the Chainlit chat UI.
+doc-flow is an AI-powered documentation generator that analyzes Go source code and produces structured Markdown API docs. It uses a LangGraph StateGraph with a ReAct agent loop: intent recognition routes to doc generation, doc Q&A, or general chat. Entry point `app.py` (project root) serves the Chainlit chat UI.
 
 ## Commands
 
@@ -43,14 +43,17 @@ START -> intent_recognize -> [route_by_intent] -+-> doc_gen -> [route_doc_gen] -
                                                 |                     |
                                                 |                     +-> END
                                                 |
-                                                +-> END
+                                                +-> chat -> END
+                                                |
+                                                +-> END (unknown intent fallback)
 ```
 - `State(TypedDict)` holds `messages` (with `add_messages` reducer), `intent`, `confidence`, `params`.
-- `intent_recognize`, `doc_gen`, and `doc_qa` are all **async** functions that accept `RunnableConfig` as a second parameter and forward it to LLM calls. This is required for Chainlit's `LangchainCallbackHandler` and to avoid callback threading issues.
+- `intent_recognize`, `doc_gen`, `doc_qa`, and `chat` are all **async** functions that accept `RunnableConfig` as a second parameter and forward it to LLM calls. This is required for Chainlit's `LangchainCallbackHandler` and to avoid callback threading issues.
 - `intent_recognize` loads the `"intent"` prompt, calls `ChatOpenAI`, parses JSON response into `intent`/`confidence`/`params`. Uses `state["messages"][-1].content` (last message).
 - `doc_gen` loads the `"doc_gen"` prompt, binds `TOOLS` (5 tools: `scan_directory`, `read_file`, `save_document`, `read_document`, `list_documents`) to `ChatOpenAI`.
-- `doc_qa` loads the `"doc_qa"` prompt, binds `QA_TOOLS` (2 tools: `read_document`, `list_documents`) to `ChatOpenAI`. Uses `state["messages"][0].content` (first message) for the user input variable.
-- `route_by_intent` routes to `"doc_gen"`, `"doc_qa"`, or `END`. `route_doc_gen` and `route_doc_qa` each route to their respective `ToolNode` if tool calls are present, else `END`.
+- `doc_qa` loads the `"doc_qa"` prompt, binds `QA_TOOLS` (2 tools: `read_document`, `list_documents`) to `ChatOpenAI`. Uses `_get_last_human_message()` for the user input variable.
+- `chat` loads the `"chat"` prompt, calls `ChatOpenAI` **without** binding tools (pure LLM conversation). Uses full message history for multi-turn context. System prompt softly guides users toward doc_gen/doc_qa features.
+- `route_by_intent` routes to `"doc_gen"`, `"doc_qa"`, `"chat"`, or `END`. `route_doc_gen` and `route_doc_qa` each route to their respective `ToolNode` if tool calls are present, else `END`.
 - `git_diff` tool exists but is intentionally excluded from both tool lists (future feature).
 
 **Key patterns:**
@@ -60,7 +63,7 @@ START -> intent_recognize -> [route_by_intent] -+-> doc_gen -> [route_doc_gen] -
 - **Tool constraints**: `file_reader` truncates files over 100KB (`MAX_FILE_SIZE_KB = 100`). `doc_storage` enforces module names matching `^[a-z][a-z0-9_]*$`. `git_diff` uses a 30s subprocess timeout and reads `.last_commit` to track the last doc generation point.
 - **JSON envelope responses**: All tools return via `ok(message, payload)` / `fail(error, message)` from `src/tools/utils.py` — consistent `{success, message, payload, error}` JSON strings.
 - **LangChain @tool decorator**: Every function in `src/tools/` is a LangChain tool with docstrings serving as LLM tool descriptions.
-- **Prompt templates**: Stored as `.md` files under `src/prompts/system/` and `src/prompts/user/`, loaded by name via `load_prompt("intent")`, `load_prompt("doc_gen")`, or `load_prompt("doc_qa")`. At least one of system/user must exist for a given name.
+- **Prompt templates**: Stored as `.md` files under `src/prompts/system/` and `src/prompts/user/`, loaded by name via `load_prompt("intent")`, `load_prompt("doc_gen")`, `load_prompt("doc_qa")`, or `load_prompt("chat")`. At least one of system/user must exist for a given name.
 - **Structured JSON logging**: Custom `JSONFormatter` producing `{time, level, module, message, error}`. `TimedRotatingFileHandler` with 7-day retention to `logs/app.log`.
 
 **Testing conventions:**
@@ -70,7 +73,7 @@ START -> intent_recognize -> [route_by_intent] -+-> doc_gen -> [route_doc_gen] -
 - Logging tests use a `_reset_logging` autouse fixture to prevent handler accumulation
 - Tools are invoked via `.invoke({"param": "value"})` (LangChain tool invocation API)
 - Graph node tests use `@patch("src.graph.nodes.ChatOpenAI")` to mock LLM calls — no real API calls in tests
-- `tests/test_app.py` patches `sys.modules` with a mock `chainlit` module before importing `app` (then `importlib.reload`), because Chainlit decorators execute at import time. Streaming is filtered to only `doc_gen` and `doc_qa` nodes.
+- `tests/test_app.py` patches `sys.modules` with a mock `chainlit` module before importing `app` (then `importlib.reload`), because Chainlit decorators execute at import time. Streaming is filtered to `doc_gen`, `doc_qa`, and `chat` nodes.
 - Config singleton tests that need a fresh instance use `monkeypatch.delitem(sys.modules, "src.config")` to force re-import
 - TDD workflow: write failing test first, implement, verify green, commit
 
