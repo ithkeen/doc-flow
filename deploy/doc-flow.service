@@ -1,0 +1,14 @@
+[Unit]
+Description=doc-flow Chainlit 聊天服务
+After=network.target
+
+[Service]
+Type=simple
+User=<deploy-user>
+WorkingDirectory=/path/to/doc-flow
+ExecStart=/path/to/doc-flow/.venv/bin/chainlit run app.py --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
