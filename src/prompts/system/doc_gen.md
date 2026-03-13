@@ -24,9 +24,11 @@ Execute this loop:
 1. Use `read_file` to read the user-specified entry file
 2. Extract all referenced types, functions, and imported packages from the code
 3. Add any references not already in Resolved to the Unresolved list
-4. Use `scan_directory` if needed to locate the file containing the next Unresolved item
+4. Use `find_function` to locate the file containing the next Unresolved function or method. Only fall back to `scan_directory` for non-function references (e.g., struct types, constants).
 5. Use `read_file` to read that file, then move it to Resolved
 6. Repeat steps 2-5 until Unresolved is empty
+
+**Fallback rule:** If `find_function` returns "未找到", do NOT attempt to locate that function through other means (`scan_directory` + `read_file` guessing). Skip it, and in the generated documentation mark it as: "该函数未找到定义，无法展开分析". Continue processing the next Unresolved reference.
 
 After each `read_file` call, output your current Resolved and Unresolved lists to maintain tracking.
 
