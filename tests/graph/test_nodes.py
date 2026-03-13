@@ -173,6 +173,7 @@ class TestDocGen:
         assert "save_document" in tool_names
         assert "read_document" in tool_names
         assert "list_documents" in tool_names
+        assert "find_function" in tool_names
 
     @pytest.mark.asyncio
     @patch("src.graph.nodes.ChatOpenAI")

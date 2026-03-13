@@ -77,8 +77,9 @@ async def intent_recognize(state: State, config: RunnableConfig) -> dict:
 from src.tools.code_scanner import scan_directory
 from src.tools.file_reader import read_file
 from src.tools.doc_storage import save_document, read_document, list_documents
+from src.tools.code_search import find_function
 
-TOOLS = [scan_directory, read_file, save_document, read_document, list_documents]
+TOOLS = [scan_directory, read_file, save_document, read_document, list_documents, find_function]
 
 QA_TOOLS = [read_document, list_documents]
 
