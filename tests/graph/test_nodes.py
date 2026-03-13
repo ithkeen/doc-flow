@@ -579,3 +579,116 @@ class TestChat:
 
         call_kwargs = mock_llm.ainvoke.call_args
         assert call_kwargs[1]["config"] == config
+
+
+class TestGetNodeLlm:
+    """_get_node_llm 工厂函数测试。"""
+
+    @patch("src.graph.nodes.ChatOpenAI")
+    @patch("src.graph.nodes.settings")
+    def test_fallback_to_global_when_node_config_all_none(self, mock_settings, mock_chat_cls):
+        """节点配置全部为 None 时，应使用全局 settings.llm 的值。"""
+        from src.graph.nodes import _get_node_llm
+
+        mock_settings.llm.base_url = "https://global.api/v1"
+        mock_settings.llm.api_key = "global-key"
+        mock_settings.llm.model = "gpt-4"
+        mock_settings.intent_llm.base_url = None
+        mock_settings.intent_llm.api_key = None
+        mock_settings.intent_llm.model = None
+
+        _get_node_llm("intent")
+
+        mock_chat_cls.assert_called_once_with(
+            base_url="https://global.api/v1",
+            api_key="global-key",
+            model="gpt-4",
+        )
+
+    @patch("src.graph.nodes.ChatOpenAI")
+    @patch("src.graph.nodes.settings")
+    def test_partial_override_uses_node_model_with_global_rest(self, mock_settings, mock_chat_cls):
+        """仅设置节点 model 时，base_url 和 api_key 应 fallback 到全局。"""
+        from src.graph.nodes import _get_node_llm
+
+        mock_settings.llm.base_url = "https://global.api/v1"
+        mock_settings.llm.api_key = "global-key"
+        mock_settings.llm.model = "gpt-4"
+        mock_settings.intent_llm.base_url = None
+        mock_settings.intent_llm.api_key = None
+        mock_settings.intent_llm.model = "gpt-4o-mini"
+
+        _get_node_llm("intent")
+
+        mock_chat_cls.assert_called_once_with(
+            base_url="https://global.api/v1",
+            api_key="global-key",
+            model="gpt-4o-mini",
+        )
+
+    @patch("src.graph.nodes.ChatOpenAI")
+    @patch("src.graph.nodes.settings")
+    def test_full_override_uses_all_node_values(self, mock_settings, mock_chat_cls):
+        """节点配置全部设置时，应完全使用节点级的值。"""
+        from src.graph.nodes import _get_node_llm
+
+        mock_settings.llm.base_url = "https://global.api/v1"
+        mock_settings.llm.api_key = "global-key"
+        mock_settings.llm.model = "gpt-4"
+        mock_settings.doc_gen_llm.base_url = "https://node.api/v1"
+        mock_settings.doc_gen_llm.api_key = "node-key"
+        mock_settings.doc_gen_llm.model = "gpt-4-turbo"
+
+        _get_node_llm("doc_gen")
+
+        mock_chat_cls.assert_called_once_with(
+            base_url="https://node.api/v1",
+            api_key="node-key",
+            model="gpt-4-turbo",
+        )
+
+    @patch("src.graph.nodes.ChatOpenAI")
+    @patch("src.graph.nodes.settings")
+    def test_unknown_node_name_falls_back_to_global(self, mock_settings, mock_chat_cls):
+        """未知节点名应完全 fallback 到全局配置。"""
+        from src.graph.nodes import _get_node_llm
+
+        mock_settings.llm.base_url = "https://global.api/v1"
+        mock_settings.llm.api_key = "global-key"
+        mock_settings.llm.model = "gpt-4"
+
+        _get_node_llm("nonexistent")
+
+        mock_chat_cls.assert_called_once_with(
+            base_url="https://global.api/v1",
+            api_key="global-key",
+            model="gpt-4",
+        )
+
+    @pytest.mark.parametrize("node_name,attr_name", [
+        ("intent", "intent_llm"),
+        ("doc_gen", "doc_gen_llm"),
+        ("doc_qa", "doc_qa_llm"),
+        ("chat", "chat_llm"),
+    ])
+    @patch("src.graph.nodes.ChatOpenAI")
+    @patch("src.graph.nodes.settings")
+    def test_all_node_names_resolve_correct_attr(self, mock_settings, mock_chat_cls, node_name, attr_name):
+        """验证所有 4 个节点名都映射到正确的 settings 属性。"""
+        from src.graph.nodes import _get_node_llm
+
+        mock_settings.llm.base_url = "https://global.api/v1"
+        mock_settings.llm.api_key = "global-key"
+        mock_settings.llm.model = "gpt-4"
+        node_cfg = getattr(mock_settings, attr_name)
+        node_cfg.base_url = None
+        node_cfg.api_key = None
+        node_cfg.model = "node-specific-model"
+
+        _get_node_llm(node_name)
+
+        mock_chat_cls.assert_called_once_with(
+            base_url="https://global.api/v1",
+            api_key="global-key",
+            model="node-specific-model",
+        )
