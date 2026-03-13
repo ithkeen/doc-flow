@@ -25,18 +25,20 @@
 - `directory: str = "."` — 搜索起始目录，相对于 `settings.agent_work_dir`
 
 **内部逻辑：**
-1. 解析 `settings.agent_work_dir / directory` 为搜索根目录
-2. 递归查找所有 `.go` 文件，排除 `_test.go`
-3. 自动拼接搜索模式，兼顾 Go 两种函数定义形式：
+1. 验证目录：检查 `settings.agent_work_dir / directory` 是否存在且为目录，不满足时返回 `fail()` 错误（与 `scan_directory` 一致）
+2. 对 `function_name` 使用 `re.escape()` 防止正则注入
+3. 递归查找所有 `.go` 文件（`rglob("*.go")`），排除 `_test.go`，按文件路径字母序排列（结果确定性）
+4. 逐行读取每个文件，匹配搜索模式。兼顾 Go 两种函数定义形式：
    - 普通函数：`func buyResourcePostPaid(`
    - 方法（带接收者）：`func (s *Service) buyResourcePostPaid(`
-   - 匹配模式：`r"^func\s+(\(.*?\)\s+)?{function_name}\s*\("`
-4. 只返回第一条匹配结果
-5. 使用 `ok()` / `fail()` JSON envelope 返回
+   - 匹配模式：`r"^func\s+(\(.*?\)\s+)?{escaped_name}\s*\("` 对每行单独匹配
+5. 文件编码处理：UTF-8 优先，`UnicodeDecodeError` 时回退到 latin-1（与 `file_reader` 一致）
+6. 只返回第一条匹配结果
+7. 使用 `ok()` / `fail()` JSON envelope 返回
 
 **返回格式：**
 - 找到时：`ok("找到函数定义", {"file": "相对路径", "line": 行号, "content": "该行内容"})`
-- 未找到时：`fail("not_found", "未找到函数 xxx 的定义")`
+- 未找到时：`fail(f"未找到函数 {function_name} 的定义")`
 
 **工具描述（docstring）：**
 > 在指定目录下查找 Go 函数的定义位置。仅当你需要定位一个具体的函数或方法的定义所在文件时使用此工具，不要用于通用代码搜索。传入函数名（不含 func 关键字），工具会自动匹配普通函数和方法定义。
@@ -68,8 +70,7 @@
 | 文件 | 变更类型 | 说明 |
 |------|----------|------|
 | `src/tools/code_search.py` | 新增 | `find_function` 工具实现 |
-| `src/tools/__init__.py` | 修改 | 导出 `find_function` |
-| `src/graph/nodes.py` | 修改 | 将 `find_function` 加入 `TOOLS` 列表 |
+| `src/graph/nodes.py` | 修改 | 新增 `from src.tools.code_search import find_function`，加入 `TOOLS` 列表 |
 | `src/prompts/system/doc_gen.md` | 修改 | 增加优先使用 find_function 的指导和搜索失败保底规则 |
 | `tests/tools/test_code_search.py` | 新增 | `find_function` 单元测试 |
 | `tests/graph/test_nodes.py` | 修改 | 验证 TOOLS 列表包含新工具 |
@@ -81,3 +82,6 @@
 - 测试未找到时的返回
 - 测试 `_test.go` 文件被正确排除
 - 测试路径沙箱（相对于 `agent_work_dir`）
+- 测试目录不存在 / 非目录时的错误返回
+- 测试函数名含正则特殊字符（如 `.`、`*`）时不会报错
+- 测试非 UTF-8 编码文件不会导致崩溃
