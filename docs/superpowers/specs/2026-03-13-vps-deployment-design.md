@@ -51,7 +51,6 @@ After=network.target
 Type=simple
 User=<deploy-user>
 WorkingDirectory=/path/to/doc-flow
-EnvironmentFile=/path/to/doc-flow/.env
 ExecStart=/path/to/doc-flow/.venv/bin/chainlit run app.py --host 127.0.0.1 --port 8000
 Restart=on-failure
 RestartSec=5
@@ -62,8 +61,9 @@ WantedBy=multi-user.target
 
 **关键设计决策**：
 - `--host 127.0.0.1`：只监听本地，由 Nginx 对外暴露
-- `EnvironmentFile`：直接加载 `.env` 文件，与本地开发一致
-- `WorkingDirectory`：设为 doc-flow 项目根目录，这样相对路径（如 `AGENT_WORK_DIR`、`DOCS_OUTPUT_DIR`、`LOG_DIR`）的解析行为与本地开发一致
+- **不使用 `EnvironmentFile`**：pydantic-settings 已通过 `env_file=_ENV_FILE` 自动加载项目根目录的 `.env` 文件，无需 systemd 重复加载。避免 systemd 的 `EnvironmentFile` 解析器与 python-dotenv 的格式差异（如多行值、行内注释）导致问题
+- `WorkingDirectory`：设为 doc-flow 项目根目录，确保 `_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent` 正确指向项目根，`.env` 文件自动被 pydantic-settings 加载
+- `ExecStart` 使用 `.venv/bin/chainlit`：`uv sync` 默认在项目根目录创建 `.venv/`
 - `Restart=on-failure`：进程异常退出时自动重启
 - `User`：使用非 root 用户运行（安全性）
 
@@ -71,17 +71,33 @@ WantedBy=multi-user.target
 
 `deploy/nginx-doc-flow.conf`：
 
-**核心配置**：
-- 反向代理：`proxy_pass http://127.0.0.1:8000`
-- WebSocket 支持（Chainlit 必需）：
-  ```
-  proxy_http_version 1.1;
-  proxy_set_header Upgrade $http_upgrade;
-  proxy_set_header Connection "upgrade";
-  ```
-- 超时放宽：`proxy_read_timeout 300s`（LLM 响应可能较慢）
-- 标准代理头：`X-Real-IP`、`X-Forwarded-For`、`X-Forwarded-Proto`
-- （可选）HTTP → HTTPS 301 重定向，SSL 证书配置
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;    # 替换为实际域名或 IP
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+
+        # WebSocket 支持（Chainlit 必需）
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # 标准代理头
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # 超时放宽（LLM 响应可能较慢）
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    # 配置 HTTPS 后，certbot 会自动添加 SSL 相关配置
+}
+```
 
 ## 环境配置
 
@@ -118,6 +134,12 @@ LOG_DIR=logs/
 
    # 安装 git（通常已预装）
    sudo apt install -y git
+
+   # 配置防火墙（只开放必要端口）
+   sudo ufw allow 22/tcp     # SSH
+   sudo ufw allow 80/tcp     # HTTP
+   sudo ufw allow 443/tcp    # HTTPS
+   sudo ufw enable
    ```
 
 2. **部署 doc-flow**：
@@ -125,10 +147,12 @@ LOG_DIR=logs/
    cd /opt  # 或你选择的部署目录
    git clone <your-repo-url> doc-flow
    cd doc-flow
-   uv sync --frozen --no-dev    # 安装生产依赖
+   uv sync --frozen --no-dev    # 安装生产依赖（自动在项目根目录创建 .venv/）
    cp .env.example .env          # 创建配置文件
    # 编辑 .env，填入 LLM_API_KEY 和 AGENT_WORK_DIR
    ```
+
+   **注意**：`.chainlit/` 和 `chainlit.md` 在 `.gitignore` 中，`git clone` 后不会存在。首次启动 Chainlit 时会自动生成默认的 `.chainlit/config.toml`。如果需要自定义配置（如 `allow_origins`），在首次启动后编辑该文件。
 
 3. **配置 systemd**：
    ```bash
@@ -153,7 +177,12 @@ LOG_DIR=logs/
    sudo certbot --nginx -d your-domain.com
    ```
 
-6. **验证**：访问 `http(s)://your-domain` 或 `http://server-ip`
+6. **验证**：
+   ```bash
+   sudo systemctl status doc-flow                  # 确认服务运行中
+   curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000  # 应返回 200
+   ```
+   然后访问 `http(s)://your-domain` 或 `http://server-ip`
 
 ### 日常运维
 
@@ -170,9 +199,11 @@ LOG_DIR=logs/
 ## 注意事项
 
 - **会话持久化**：当前 MemorySaver 是内存级别，进程重启后会话丢失。小团队场景可接受，未来可接入 SQLite/PostgreSQL checkpointer。
-- **安全性**：`.env` 不提交 Git（确认 `.gitignore` 已排除）；使用非 root 用户运行服务；Chainlit 只监听 127.0.0.1。部署后建议将 `.chainlit/config.toml` 中的 `allow_origins` 从 `["*"]` 改为实际域名。
+- **安全性**：`.env` 不提交 Git（确认 `.gitignore` 已排除）；使用非 root 用户运行服务；Chainlit 只监听 127.0.0.1；防火墙仅开放 22/80/443 端口。Chainlit 首次启动后会生成 `.chainlit/config.toml`，建议将 `allow_origins` 从默认的 `["*"]` 改为实际域名。
 - **HTTPS**：推荐使用 certbot 自动获取和续期 Let's Encrypt 证书。内网使用时可暂时只开 HTTP。
 - **Go 项目更新**：Go 项目直接在服务器本地 `git pull`，doc-flow 通过 `AGENT_WORK_DIR` 路径读取，无需重启。未来可扩展 `git_diff` 工具实现代码变动自动触发文档更新。
+- **Go 运行时**：不需要安装 Go，doc-flow 只读取 Go 源码文件，不编译或执行。
+- **回滚**：如果更新后服务异常，可通过 `git checkout <上一个版本>` 回退代码，再 `sudo systemctl restart doc-flow`。
 
 ## 交付物
 
