@@ -29,6 +29,9 @@ def find_function(function_name: str, directory: str = ".") -> str:
     Returns:
         JSON envelope，payload 包含 file（文件路径）、line（行号）、content（该行内容）。
     """
+    if not function_name or not function_name.strip():
+        return fail("函数名不能为空")
+
     dir_path = Path(settings.agent_work_dir) / directory
 
     if not dir_path.exists():
@@ -52,7 +55,8 @@ def find_function(function_name: str, directory: str = ".") -> str:
         except UnicodeDecodeError:
             try:
                 content = go_file.read_text(encoding="latin-1")
-            except Exception:
+            except Exception as e:
+                logger.warning("文件 %s 读取失败，已跳过：%s", go_file, e)
                 continue
 
         for line_num, line in enumerate(content.splitlines(), 1):
