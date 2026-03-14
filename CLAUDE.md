@@ -10,12 +10,8 @@ doc-flow is an AI-powered documentation generator that analyzes Go source code a
 
 ```bash
 uv sync                              # Install dependencies
-uv run pytest tests/ -v              # Run all tests
-uv run pytest tests/config/ -v       # Run a specific test directory
-uv run pytest tests/config/test_settings.py -v  # Run a single test file
-uv run pytest tests/config/test_settings.py::TestClassName::test_method -v  # Run a single test
 uv run langgraph dev                 # Run LangGraph dev server (uses langgraph.json → src/graph/graph.py:build_graph)
-uv run chainlit run app.py -w            # Run Chainlit chat UI (hot reload)
+uv run chainlit run app.py -w        # Run Chainlit chat UI (hot reload)
 ```
 
 No linter or formatter is configured.
@@ -66,16 +62,6 @@ START -> intent_recognize -> [route_by_intent] -+-> doc_gen -> [route_doc_gen] -
 - **Prompt templates**: Stored as `.md` files under `src/prompts/system/` and `src/prompts/user/`, loaded by name via `load_prompt("intent")`, `load_prompt("doc_gen")`, `load_prompt("doc_qa")`, or `load_prompt("chat")`. At least one of system/user must exist for a given name.
 - **Structured JSON logging**: Custom `JSONFormatter` producing `{time, level, module, message, error}`. `TimedRotatingFileHandler` with 7-day retention to `logs/app.log`.
 
-**Testing conventions:**
-- Tests mirror `src/` structure under `tests/`
-- Use `monkeypatch` for env vars, `tmp_path` for filesystem isolation
-- Async tests use `pytest-asyncio` with explicit `@pytest.mark.asyncio` decorators
-- Logging tests use a `_reset_logging` autouse fixture to prevent handler accumulation
-- Tools are invoked via `.invoke({"param": "value"})` (LangChain tool invocation API)
-- Graph node tests use `@patch("src.graph.nodes.ChatOpenAI")` to mock LLM calls — no real API calls in tests
-- `tests/test_app.py` patches `sys.modules` with a mock `chainlit` module before importing `app` (then `importlib.reload`), because Chainlit decorators execute at import time. Streaming is filtered to `doc_gen`, `doc_qa`, and `chat` nodes.
-- Config singleton tests that need a fresh instance use `monkeypatch.delitem(sys.modules, "src.config")` to force re-import
-- TDD workflow: write failing test first, implement, verify green, commit
 
 ## Environment
 
@@ -83,4 +69,3 @@ START -> intent_recognize -> [route_by_intent] -+-> doc_gen -> [route_doc_gen] -
 - Package manager: `uv`
 - Copy `.env.example` to `.env` and set `LLM_API_KEY` at minimum
 - Prompts, tool docstrings, and error messages are in Chinese (Simplified), except the `doc_gen` system prompt which is in English
-- Design plans and specs live under `docs/plans/` and `docs/superpowers/`
