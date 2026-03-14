@@ -18,7 +18,7 @@ doc-flow 当前通过 Chainlit 聊天界面逐个生成 API 文档。`AGENT_WORK
 
 ## 项目配置文件
 
-每个项目在 `DOCS_OUTPUT_DIR/{project}/` 下有一个 `.docflow.yaml` 配置文件。
+每个项目在 `DOCS_OUTPUT_DIR/{project}/` 下有一个 `.docflow.yaml` 配置文件。配置使用 Pydantic model 进行校验，无效配置（缺少必填字段、无效正则等）在加载阶段立即报错并输出明确的错误信息。
 
 ### 完整示例
 
@@ -44,6 +44,7 @@ modules:
   - match: "payment/**"
     module: "payment"
   # 未匹配的 fallback：取源码文件相对于 source_root 的第一级目录名
+  # 如果文件直接在 source_root 下（无子目录），使用 "_root" 作为模块名
 
 # 黑名单：不生成文档的函数和文件
 blacklist:
@@ -66,7 +67,7 @@ blacklist:
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `discovery.source_root` | string | 是 | 项目源码根目录，相对于 `AGENT_WORK_DIR` |
-| `discovery.patterns` | list | 是 | API 注册函数的正则模式，捕获组 1 为函数名 |
+| `discovery.patterns` | list | 是 | API 注册函数的正则模式，捕获组 1 为函数名。加载时校验正则合法性 |
 | `modules` | list | 否 | 模块映射规则，按顺序匹配 |
 | `modules[].match` | string | 是 | glob 模式，相对于 `source_root` |
 | `modules[].module` | string | 是 | 目标模块名 |
@@ -77,6 +78,14 @@ blacklist:
 | `blacklist.files[].path` | string | 是 | 文件路径，相对于 `source_root` |
 | `blacklist.files[].reason` | string | 是 | 跳过原因 |
 
+### 配置校验
+
+`config.py` 使用 Pydantic model 校验 `.docflow.yaml`：
+- `discovery` 和 `discovery.source_root` 为必填字段
+- `discovery.patterns` 至少包含一项，且每项的 `regex` 必须是合法的正则表达式且包含至少一个捕获组
+- `modules[].module` 必须匹配 `^[a-z][a-z0-9_]*$`
+- `blacklist` 整体可选，`functions` 和 `files` 列表也可选
+
 ## 文档索引（INDEX.md）
 
 索引是批量生成系统的核心，位于 `DOCS_OUTPUT_DIR/{project}/INDEX.md`，承担两个职责：
@@ -86,6 +95,8 @@ blacklist:
 
 ### 索引格式
 
+索引使用 Markdown 表格，便于人类阅读和 LLM 解析。`index.py` 使用基于正则的行级解析器处理表格（逐行匹配 `|` 分隔的字段），不依赖第三方 Markdown 解析库。所有字段值在写入时转义管道符（`|` → `\|`），读取时反转义。
+
 ```markdown
 # access 项目 API 文档索引
 
@@ -93,14 +104,14 @@ blacklist:
 
 | API | 源码位置 | 文档位置 | 生成时间 |
 |-----|---------|---------|---------|
-| CreateOrder | order/logic/create.go:45 | order/create_order.md | 2026-03-14 |
-| QueryOrder | order/handler/query.go:12 | order/query_order.md | 2026-03-14 |
+| CreateOrder | order/logic/create.go:45 | order/create_order.md | 2026-03-14 10:30 |
+| QueryOrder | order/handler/query.go:12 | order/query_order.md | 2026-03-14 10:31 |
 
 ## user
 
 | API | 源码位置 | 文档位置 | 生成时间 |
 |-----|---------|---------|---------|
-| GetUserInfo | user/logic/info.go:30 | user/get_user_info.md | 2026-03-14 |
+| GetUserInfo | user/logic/info.go:30 | user/get_user_info.md | 2026-03-14 10:32 |
 
 ## 黑名单
 
@@ -112,10 +123,45 @@ blacklist:
 
 ### 索引管理规则
 
-- 每次批量生成完成后自动更新索引
-- 单个 API 重新生成（`--api`）后更新对应条目
+- **增量更新**：每生成一个 API 文档后立即更新索引（追加或替换条目），确保进程中断后已完成的工作不会丢失
+- 单个 API 重新生成（`--api`）后替换对应条目
 - 黑名单条目从 `.docflow.yaml` 同步到索引的黑名单区域
-- 索引以 Markdown 表格形式存储，便于人类阅读和 LLM 解析
+- 生成时间精确到分钟（`YYYY-MM-DD HH:MM`）
+
+### 路径约定
+
+索引中的所有路径都是相对路径：
+- **源码位置**：相对于 `source_root`（如 `order/logic/create.go:45`）
+- **文档位置**：相对于 `DOCS_OUTPUT_DIR/{project}/`（如 `order/create_order.md`）
+
+### 文件命名规则
+
+函数名使用 CamelCase 拆分转为 snake_case 作为文件名：
+- `CreateOrder` → `create_order.md`
+- `GetUserInfo` → `get_user_info.md`
+- `QueryOrderV2` → `query_order_v2.md`
+
+在连续大写字母与小写字母交界处拆分（如 `HTTPHandler` → `http_handler.md`）。
+
+## 文档存储与 doc_qa 的兼容
+
+### 路径方案
+
+批量生成的文档存储在 `DOCS_OUTPUT_DIR/{project}/{module}/{api}.md`。generator 的 `graph.py` 中**不通过 `save_document` 工具保存文档**，而是在 gen_doc 的 prompt 中指导 LLM 生成文档内容后，由 runner 直接写入预定路径。这避免了修改 `save_document` 的 module_name 校验逻辑。
+
+具体做法：
+- gen_doc prompt 指导 LLM 完成 Task 1-3（递归上下文构建 → 执行流分析 → 生成文档内容），将最终文档内容作为最后一条消息输出
+- runner 从图执行结果中提取文档内容，直接写入 `DOCS_OUTPUT_DIR/{project}/{module}/{api_name}.md`
+- **不绑定 `save_document`**，工具集精简为：`read_file`、`find_function`
+
+### doc_qa 兼容性
+
+> **已知功能缺口**：批量生成完成后，`doc_qa` 暂时无法通过现有的 `read_document`/`list_documents` 工具直接读取批量生成的文档。原因是 `_validate_module_name` 的正则 `^[a-z][a-z0-9_]*$` 不接受包含 `/` 的 module_name（如 `access/order`）。这需要后续跟进工作来解决。
+
+**后续跟进**（不在本次范围）：
+1. 放宽 `_validate_module_name` 正则，支持路径分隔符（如 `^[a-z][a-z0-9_/]*$`）
+2. 更新 `doc_qa` prompt，指导 LLM 先读取 INDEX.md 定位文档路径，再用 `read_document` 读取
+3. 或引入项目感知的文档查询工具替代现有工具
 
 ## 批量生成流程
 
@@ -125,32 +171,40 @@ blacklist:
 ┌─────────────────────────────────────────────────────┐
 │ 1. 加载配置                                          │
 │    读取 DOCS_OUTPUT_DIR/{project}/.docflow.yaml      │
+│    Pydantic 校验，无效配置立即报错退出                 │
 ├─────────────────────────────────────────────────────┤
 │ 2. API 发现                                          │
 │    扫描 AGENT_WORK_DIR/{source_root}/ 下所有 .go 文件│
+│    （排除 _test.go）                                  │
 │    用 discovery.patterns 正则匹配注册调用             │
 │    提取所有被注册的函数名 + 所在文件路径 + 行号        │
+│    ※ 同一函数名在多个文件中被注册：全部记录，各自生成  │
+│    ※ 正则匹配到函数名但捕获组为空：跳过并警告         │
 ├─────────────────────────────────────────────────────┤
 │ 3. 过滤                                              │
 │    ├─ 解析 INDEX.md 获取已记录的 API 集合             │
 │    ├─ 去掉黑名单中的函数（按 name 匹配）              │
 │    ├─ 去掉黑名单中的文件（按 path 匹配）              │
+│    │  ※ 所有路径统一转为 source_root 相对路径再比较    │
 │    └─ 去掉索引中已有的 API（函数名+源码位置相同）      │
 ├─────────────────────────────────────────────────────┤
 │ 4. 模块分配                                          │
 │    根据 modules 映射规则确定每个 API 的目标模块        │
 │    未命中规则的使用 source_root 下的第一级目录名       │
+│    ※ 文件直接在 source_root 下（无子目录）：          │
+│       使用 "_root" 作为模块名                         │
 ├─────────────────────────────────────────────────────┤
 │ 5. 串行生成                                          │
 │    对每个待生成的 API：                                │
 │    ├─ 构建初始 State（messages + params）             │
 │    ├─ 调用 generator_graph（ReAct 循环）              │
+│    ├─ runner 从结果中提取文档内容，写入预定路径         │
+│    ├─ 立即更新 INDEX.md（追加/替换该 API 条目）       │
 │    ├─ 记录结果（成功/失败）                           │
 │    └─ 输出进度 [3/15] ✓ order.CreateOrder             │
 ├─────────────────────────────────────────────────────┤
-│ 6. 更新索引                                          │
-│    将新生成的 API 追加到 INDEX.md                     │
-│    同步黑名单条目到索引的黑名单区域                    │
+│ 6. 同步黑名单                                        │
+│    将 .docflow.yaml 中的黑名单条目同步到 INDEX.md     │
 ├─────────────────────────────────────────────────────┤
 │ 7. 输出报告                                          │
 │    总计/成功/失败/跳过(已有)/跳过(黑名单) 统计         │
@@ -162,13 +216,20 @@ blacklist:
 使用 `--api CreateOrder` 时：
 
 1. 加载配置
-2. 在 `source_root` 中查找该函数（使用 `find_function` 逻辑）
-3. 跳过索引检查和黑名单检查，直接生成
-4. 更新索引中该 API 的条目（替换旧记录）
+2. 在 `source_root` 中查找该函数（复用 `find_function` 的正则逻辑扫描 `.go` 文件）
+3. 如果找到多个匹配：列出所有匹配项并报错退出，提示用户用 `--api-file` 指定具体文件路径
+4. 如果该函数在黑名单中：输出警告（"该函数在黑名单中，原因：xxx"），仍然执行生成（用户显式指定表示有意覆盖）
+5. 根据模块映射规则确定模块
+6. 生成文档
+7. 更新索引中该 API 的条目（替换旧记录）
 
 ### 全量强制重新生成
 
 使用 `--force` 时：跳过步骤 3 的索引过滤，对所有发现的非黑名单 API 重新生成文档。
+
+### `--all` 模式
+
+遍历 `DOCS_OUTPUT_DIR` 下所有包含 `.docflow.yaml` 的子目录，逐项目执行。单个项目失败不影响后续项目，最终输出每个项目的独立报告。
 
 ## 生成专用图
 
@@ -180,12 +241,33 @@ START → gen_doc → [has_tool_calls?] ─yes→ gen_tools → gen_doc (循环)
                         └─ no ─→ END
 ```
 
+### State 定义
+
+```python
+class GenState(TypedDict):
+    messages: Annotated[list, add_messages]
+    project: str        # 项目名（如 "access"）
+    module: str         # 目标模块名（如 "order"）
+    function_name: str  # 目标函数名（如 "CreateOrder"）
+    source_file: str    # 源码文件路径，相对于 AGENT_WORK_DIR（如 "access/order/logic/create.go"）
+    source_line: int    # 函数定义行号
+```
+
 ### gen_doc 节点
 
-- 使用专用的 `batch_doc_gen` prompt（见下文）
-- 接收预确定的上下文：项目名、模块名、函数名、源码文件路径
-- 绑定工具集：`read_file`、`save_document`、`find_function`
-- 使用 `_get_node_llm("doc_gen")` 获取 LLM 实例（复用 per-node LLM 配置）
+- 使用专用的 `batch_doc_gen` prompt
+- prompt 模板变量：`{project}`、`{module}`、`{function_name}`、`{source_file}`、`{source_line}`
+- 绑定工具集：`read_file`、`find_function`（不含 `save_document`，由 runner 负责写入）
+- 使用 `get_node_llm("doc_gen")` 获取 LLM 实例（复用 per-node LLM 配置）
+
+### _get_node_llm 公共化
+
+现有 `_get_node_llm` 函数定义在 `src/graph/nodes.py` 中，以下划线开头表示私有。generator 模块需要跨模块调用此函数，因此需要将其提取为公共 API：
+
+- 将 `_get_node_llm` 从 `src/graph/nodes.py` 移动到 `src/config/llm.py`（新文件）
+- 重命名为 `get_node_llm`（去掉下划线前缀）
+- `src/graph/nodes.py` 和 `src/generator/graph.py` 均从 `src.config.llm` 导入
+- 在 `src/config/__init__.py` 中导出 `get_node_llm`
 
 ### batch_doc_gen prompt 与现有 doc_gen prompt 的区别
 
@@ -193,9 +275,10 @@ START → gen_doc → [has_tool_calls?] ─yes→ gen_tools → gen_doc (循环)
 |------|-------------|---------------|
 | Pre-check 阶段 | 需要（解析目标、去重检查） | 不需要（目标已确定） |
 | 模块推断 | LLM 从包名/目录推断 | 预分配，通过参数传入 |
-| save_document 路径 | LLM 自行决定 module_name | 使用预分配的 `{project}/{module}` |
+| 保存方式 | LLM 调用 `save_document` | LLM 输出文档内容，runner 负责写入 |
 | 起点 | 从 Pre-check 开始 | 直接从 Task 1（递归上下文构建）开始 |
-| Task 1-4 核心流程 | 递归上下文构建 → 执行流分析 → 生成文档 → 保存 | 相同 |
+| Task 1-3 核心流程 | 递归上下文构建 → 执行流分析 → 生成文档 | 相同 |
+| Task 4（保存） | LLM 自行调用 save_document | 不需要，最后一条消息即为文档内容 |
 
 ## CLI 接口
 
@@ -211,8 +294,14 @@ uv run python -m src.generator --all
 # 重新生成指定项目中某个 API 的文档
 uv run python -m src.generator --project access --api CreateOrder
 
+# 通过文件路径精确指定（用于函数名有多个匹配的情况）
+uv run python -m src.generator --project access --api CreateOrder --api-file order/logic/create.go
+
 # 强制重新生成整个项目（忽略索引）
 uv run python -m src.generator --project access --force
+
+# 预览模式：显示会生成哪些 API，不实际调用 LLM
+uv run python -m src.generator --project access --dry-run
 ```
 
 ### 参数说明
@@ -222,7 +311,16 @@ uv run python -m src.generator --project access --force
 | `--project` | 指定项目名（对应 `DOCS_OUTPUT_DIR/{project}/` 目录） |
 | `--all` | 遍历所有有 `.docflow.yaml` 的项目 |
 | `--api` | 指定重新生成的单个 API 函数名（与 `--project` 配合使用） |
+| `--api-file` | 精确指定源码文件路径（当 `--api` 有多个匹配时使用，相对于 `source_root`） |
 | `--force` | 忽略索引，强制重新生成所有非黑名单 API |
+| `--dry-run` | 预览模式，只显示发现/过滤结果，不实际生成 |
+
+### 参数约束
+
+- `--project` 和 `--all` 互斥
+- `--api` 必须与 `--project` 一起使用
+- `--api-file` 必须与 `--api` 一起使用
+- `--force` 不能与 `--api` 同时使用（单个 API 重新生成本身就忽略索引）
 
 ### 输出示例
 
@@ -253,9 +351,9 @@ uv run python -m src.generator --project access --force
 src/generator/
 ├── __init__.py
 ├── __main__.py          # CLI 入口，argparse 参数解析，调用 runner
-├── config.py            # .docflow.yaml 解析，返回 ProjectConfig dataclass
+├── config.py            # .docflow.yaml 解析，Pydantic model 校验，返回 ProjectConfig
 ├── discovery.py         # API 发现：扫描 .go 文件 + 正则匹配注册调用
-├── index.py             # INDEX.md 读写：解析/查询/追加/更新/写回
+├── index.py             # INDEX.md 读写：正则行级解析器，查询/追加/替换/写回
 ├── runner.py            # 主编排：加载配置 → 发现 → 过滤 → 模块分配 → 生成 → 更新索引
 └── graph.py             # 生成专用图：gen_doc ↔ gen_tools ReAct 循环
 ```
@@ -267,9 +365,9 @@ src/config (settings singleton: AGENT_WORK_DIR, DOCS_OUTPUT_DIR, LLM config)
     └─> src/generator/config.py (reads .docflow.yaml)
     └─> src/generator/discovery.py (uses AGENT_WORK_DIR for scanning)
     └─> src/generator/index.py (uses DOCS_OUTPUT_DIR for index path)
-    └─> src/generator/graph.py (uses _get_node_llm, tools from src/tools/)
+    └─> src/generator/graph.py (uses _get_node_llm, existing tools)
 
-src/tools/ (read_file, save_document, find_function)
+src/tools/ (read_file, find_function)
     └─> src/generator/graph.py (binds tools to LLM)
 
 src/prompts/ (load_prompt)
@@ -284,8 +382,10 @@ src/logs/ (logger)
 | 模块 | 变更 | 说明 |
 |------|------|------|
 | `src/config/settings.py` | 无变化 | `AGENT_WORK_DIR` 和 `DOCS_OUTPUT_DIR` 继续作为全局配置 |
-| `src/tools/doc_storage.py` | **需修改** | `module_name` 验证正则 `^[a-z][a-z0-9_]*$` 需放宽为支持 `/` 路径分隔符（如 `access/order`） |
-| `src/tools/` 其他 | 无变化 | `read_file`、`find_function` 等直接复用 |
+| `src/config/` | **新增** | 新增 `llm.py`，将 `_get_node_llm` 提取为公共 `get_node_llm` 函数 |
+| `src/graph/nodes.py` | **小改** | `_get_node_llm` 改为从 `src.config.llm` 导入 `get_node_llm` |
+| `src/tools/doc_storage.py` | 无变化 | 批量生成不使用 `save_document`，由 runner 直接写入文件 |
+| `src/tools/` 其他 | 无变化 | `read_file`、`find_function` 直接复用 |
 | `src/graph/` | 无变化 | 现有主图保持不动 |
 | `src/prompts/system/` | **新增** | 新增 `batch_doc_gen.md` prompt 模板 |
 | `src/prompts/user/` | **新增** | 新增 `batch_doc_gen.md` user prompt 模板 |
@@ -309,3 +409,20 @@ DOCS_OUTPUT_DIR/
 │   ├── INDEX.md
 │   └── ...
 ```
+
+## 边界情况处理
+
+| 场景 | 处理方式 |
+|------|---------|
+| `.docflow.yaml` 格式错误 | Pydantic 校验失败，输出错误详情并退出 |
+| `discovery.patterns` 中的正则无效 | 加载时校验，报错退出 |
+| 正则匹配到注册调用但捕获组为空 | 跳过该匹配，输出警告 |
+| 同一函数名在多个文件中被注册 | 全部记录，各自生成独立文档 |
+| `--api` 指定的函数有多个定义 | 报错退出，提示使用 `--api-file` 精确指定 |
+| `--api` 指定的函数在黑名单中 | 输出警告但继续生成（用户显式指定） |
+| `--api` 指定的函数存在于源码中但未被任何 discovery pattern 匹配 | 仍然生成（`--api` 是显式指令，不受发现规则限制） |
+| 文件直接在 `source_root` 下（无子目录） | 使用 `_root` 作为模块名 |
+| LLM 调用超时或失败 | 记录失败，继续处理下一个 API，最终报告中列出所有失败项 |
+| `--all` 模式下某项目失败 | 继续处理后续项目，最终输出每个项目的独立报告 |
+| INDEX.md 不存在 | 首次运行时自动创建 |
+| INDEX.md 被手动修改导致格式异常 | 解析失败时输出警告，视为空索引重新生成 |
