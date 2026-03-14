@@ -104,14 +104,14 @@ blacklist:
 
 | API | 源码位置 | 文档位置 | 生成时间 |
 |-----|---------|---------|---------|
-| CreateOrder | order/logic/create.go:45 | order/create_order.md | 2026-03-14 10:30 |
-| QueryOrder | order/handler/query.go:12 | order/query_order.md | 2026-03-14 10:31 |
+| CreateOrder | order/logic/create.go:45 | order/CreateOrder.md | 2026-03-14 10:30 |
+| QueryOrder | order/handler/query.go:12 | order/QueryOrder.md | 2026-03-14 10:31 |
 
 ## user
 
 | API | 源码位置 | 文档位置 | 生成时间 |
 |-----|---------|---------|---------|
-| GetUserInfo | user/logic/info.go:30 | user/get_user_info.md | 2026-03-14 10:32 |
+| GetUserInfo | user/logic/info.go:30 | user/GetUserInfo.md | 2026-03-14 10:32 |
 
 ## 黑名单
 
@@ -132,36 +132,29 @@ blacklist:
 
 索引中的所有路径都是相对路径：
 - **源码位置**：相对于 `source_root`（如 `order/logic/create.go:45`）
-- **文档位置**：相对于 `DOCS_OUTPUT_DIR/{project}/`（如 `order/create_order.md`）
+- **文档位置**：相对于 `DOCS_OUTPUT_DIR/{project}/`（如 `order/CreateOrder.md`）
 
 ### 文件命名规则
 
-函数名使用 CamelCase 拆分转为 snake_case 作为文件名：
-- `CreateOrder` → `create_order.md`
-- `GetUserInfo` → `get_user_info.md`
-- `QueryOrderV2` → `query_order_v2.md`
-
-在连续大写字母与小写字母交界处拆分（如 `HTTPHandler` → `http_handler.md`）。
+文档文件名直接使用原始 API 函数名，如 `CreateOrder.md`、`GetUserInfo.md`。
 
 ## 文档存储与 doc_qa 的兼容
 
 ### 路径方案
 
-批量生成的文档存储在 `DOCS_OUTPUT_DIR/{project}/{module}/{api}.md`。generator 的 `graph.py` 中**不通过 `save_document` 工具保存文档**，而是在 gen_doc 的 prompt 中指导 LLM 生成文档内容后，由 runner 直接写入预定路径。这避免了修改 `save_document` 的 module_name 校验逻辑。
+批量生成的文档存储在 `DOCS_OUTPUT_DIR/{project}/{module}/{api}.md`。放宽 `save_document` 的 `_validate_module_name` 正则，使其支持 `/` 路径分隔符，LLM 在 ReAct 循环中直接调用 `save_document` 保存文档，流程与现有 `doc_gen` 一致。
 
 具体做法：
-- gen_doc prompt 指导 LLM 完成 Task 1-3（递归上下文构建 → 执行流分析 → 生成文档内容），将最终文档内容作为最后一条消息输出
-- runner 从图执行结果中提取文档内容，直接写入 `DOCS_OUTPUT_DIR/{project}/{module}/{api_name}.md`
-- **不绑定 `save_document`**，工具集精简为：`read_file`、`find_function`
+- 将 `_validate_module_name` 正则从 `^[a-z][a-z0-9_]*$` 放宽为 `^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$`，支持如 `access/order` 的路径形式
+- gen_doc prompt 指导 LLM 完成 Task 1-4（递归上下文构建 → 执行流分析 → 生成文档 → 调用 `save_document` 保存），module_name 使用 `{project}/{module}` 格式
+- 工具集：`read_file`、`find_function`、`save_document`
 
 ### doc_qa 兼容性
 
-> **已知功能缺口**：批量生成完成后，`doc_qa` 暂时无法通过现有的 `read_document`/`list_documents` 工具直接读取批量生成的文档。原因是 `_validate_module_name` 的正则 `^[a-z][a-z0-9_]*$` 不接受包含 `/` 的 module_name（如 `access/order`）。这需要后续跟进工作来解决。
+放宽 `_validate_module_name` 后，`doc_qa` 的 `read_document` 和 `list_documents` 工具自然支持包含 `/` 的 module_name（如 `access/order`）。
 
 **后续跟进**（不在本次范围）：
-1. 放宽 `_validate_module_name` 正则，支持路径分隔符（如 `^[a-z][a-z0-9_/]*$`）
-2. 更新 `doc_qa` prompt，指导 LLM 先读取 INDEX.md 定位文档路径，再用 `read_document` 读取
-3. 或引入项目感知的文档查询工具替代现有工具
+- 更新 `doc_qa` prompt，指导 LLM 先读取 INDEX.md 定位文档路径，再用 `read_document` 读取
 
 ## 批量生成流程
 
@@ -198,7 +191,7 @@ blacklist:
 │    对每个待生成的 API：                                │
 │    ├─ 构建初始 State（messages + params）             │
 │    ├─ 调用 generator_graph（ReAct 循环）              │
-│    ├─ runner 从结果中提取文档内容，写入预定路径         │
+│    │  LLM 读取源码、分析、生成文档、调用 save_document │
 │    ├─ 立即更新 INDEX.md（追加/替换该 API 条目）       │
 │    ├─ 记录结果（成功/失败）                           │
 │    └─ 输出进度 [3/15] ✓ order.CreateOrder             │
@@ -257,7 +250,7 @@ class GenState(TypedDict):
 
 - 使用专用的 `batch_doc_gen` prompt
 - prompt 模板变量：`{project}`、`{module}`、`{function_name}`、`{source_file}`、`{source_line}`
-- 绑定工具集：`read_file`、`find_function`（不含 `save_document`，由 runner 负责写入）
+- 绑定工具集：`read_file`、`find_function`、`save_document`
 - 使用 `get_node_llm("doc_gen")` 获取 LLM 实例（复用 per-node LLM 配置）
 
 ### _get_node_llm 公共化
@@ -275,10 +268,9 @@ class GenState(TypedDict):
 |------|-------------|---------------|
 | Pre-check 阶段 | 需要（解析目标、去重检查） | 不需要（目标已确定） |
 | 模块推断 | LLM 从包名/目录推断 | 预分配，通过参数传入 |
-| 保存方式 | LLM 调用 `save_document` | LLM 输出文档内容，runner 负责写入 |
+| 保存方式 | LLM 调用 `save_document`（module_name 自行推断） | LLM 调用 `save_document`（module_name 由 prompt 指定为 `{project}/{module}`） |
 | 起点 | 从 Pre-check 开始 | 直接从 Task 1（递归上下文构建）开始 |
-| Task 1-3 核心流程 | 递归上下文构建 → 执行流分析 → 生成文档 | 相同 |
-| Task 4（保存） | LLM 自行调用 save_document | 不需要，最后一条消息即为文档内容 |
+| Task 1-4 核心流程 | 递归上下文构建 → 执行流分析 → 生成文档 → 保存 | 相同 |
 
 ## CLI 接口
 
@@ -367,7 +359,7 @@ src/config (settings singleton: AGENT_WORK_DIR, DOCS_OUTPUT_DIR, LLM config)
     └─> src/generator/index.py (uses DOCS_OUTPUT_DIR for index path)
     └─> src/generator/graph.py (uses _get_node_llm, existing tools)
 
-src/tools/ (read_file, find_function)
+src/tools/ (read_file, find_function, save_document)
     └─> src/generator/graph.py (binds tools to LLM)
 
 src/prompts/ (load_prompt)
@@ -384,7 +376,7 @@ src/logs/ (logger)
 | `src/config/settings.py` | 无变化 | `AGENT_WORK_DIR` 和 `DOCS_OUTPUT_DIR` 继续作为全局配置 |
 | `src/config/` | **新增** | 新增 `llm.py`，将 `_get_node_llm` 提取为公共 `get_node_llm` 函数 |
 | `src/graph/nodes.py` | **小改** | `_get_node_llm` 改为从 `src.config.llm` 导入 `get_node_llm` |
-| `src/tools/doc_storage.py` | 无变化 | 批量生成不使用 `save_document`，由 runner 直接写入文件 |
+| `src/tools/doc_storage.py` | **小改** | 放宽 `_validate_module_name` 正则，支持 `/` 路径分隔符 |
 | `src/tools/` 其他 | 无变化 | `read_file`、`find_function` 直接复用 |
 | `src/graph/` | 无变化 | 现有主图保持不动 |
 | `src/prompts/system/` | **新增** | 新增 `batch_doc_gen.md` prompt 模板 |
@@ -398,12 +390,12 @@ DOCS_OUTPUT_DIR/
 │   ├── .docflow.yaml            # 项目配置
 │   ├── INDEX.md                 # 文档索引
 │   ├── order/                   # order 模块
-│   │   ├── create_order.md
-│   │   ├── query_order.md
-│   │   └── cancel_order.md
+│   │   ├── CreateOrder.md
+│   │   ├── QueryOrder.md
+│   │   └── CancelOrder.md
 │   └── user/                    # user 模块
-│       ├── get_user_info.md
-│       └── update_profile.md
+│       ├── GetUserInfo.md
+│       └── UpdateProfile.md
 ├── udata/                       # udata 项目
 │   ├── .docflow.yaml
 │   ├── INDEX.md
