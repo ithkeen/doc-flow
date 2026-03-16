@@ -25,7 +25,7 @@ async def on_chat_start():
     """新会话开始时生成 thread_id 并发送欢迎消息。"""
     cl.user_session.set("thread_id", str(uuid4()))
     await cl.Message(
-        content="你好！我是 doc-flow，你可以让我为 Go 源码文件生成 API 文档，或者基于已有文档提问。"
+        content="你好！我是 doc-flow，你可以基于已有文档提问，或者和我自由聊天。"
     ).send()
 
 
@@ -58,7 +58,7 @@ async def on_message(message: cl.Message):
             if (
                 msg.content
                 and not isinstance(msg, HumanMessage)
-                and metadata["langgraph_node"] in ("doc_gen", "doc_qa", "chat")
+                and metadata["langgraph_node"] in ("doc_qa", "chat")
             ):
                 await answer.stream_token(msg.content)
     except Exception:
@@ -66,6 +66,6 @@ async def on_message(message: cl.Message):
         answer.content = "抱歉，处理过程中出现错误，请稍后重试。"
 
     if not answer.content:
-        answer.content = "抱歉，我暂时无法理解你的意思。你可以让我进行文档生成、文档问答，也可以和我自由聊天。"
+        answer.content = "抱歉，我暂时无法理解你的意思。你可以让我进行文档问答，也可以和我自由聊天。"
 
     await answer.send()
