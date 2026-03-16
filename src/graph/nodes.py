@@ -11,35 +11,16 @@ from typing import Annotated
 
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
 from typing_extensions import TypedDict
 from langgraph.graph import END
 from langgraph.graph.message import add_messages
 
 from src.config import settings
+from src.config.llm import get_node_llm
 from src.logs import get_logger
 from src.prompts import load_prompt
 
 logger = get_logger(__name__)
-
-_NODE_LLM_ATTR = {
-    "intent": "intent_llm",
-    "doc_gen": "doc_gen_llm",
-    "doc_qa": "doc_qa_llm",
-    "chat": "chat_llm",
-}
-
-
-def _get_node_llm(node_name: str) -> ChatOpenAI:
-    """根据节点名称返回对应配置的 ChatOpenAI 实例，未配置字段 fallback 到全局。"""
-    attr = _NODE_LLM_ATTR.get(node_name)
-    node_cfg = getattr(settings, attr, None) if attr else None
-
-    base_url = node_cfg.base_url if (node_cfg and node_cfg.base_url is not None) else settings.llm.base_url
-    api_key = node_cfg.api_key if (node_cfg and node_cfg.api_key is not None) else settings.llm.api_key
-    model = node_cfg.model if (node_cfg and node_cfg.model is not None) else settings.llm.model
-
-    return ChatOpenAI(base_url=base_url, api_key=api_key, model=model)
 
 
 class State(TypedDict):
@@ -66,7 +47,7 @@ async def intent_recognize(state: State, config: RunnableConfig) -> dict:
         user_input=user_input,
     )
 
-    llm = _get_node_llm("intent")
+    llm = get_node_llm("intent")
     response = await llm.ainvoke(messages, config=config)
 
     raw = response.content
@@ -118,7 +99,7 @@ async def doc_qa(state: State, config: RunnableConfig) -> dict:
 
     system_messages = prompt.format_messages(user_input=user_input)
 
-    llm = _get_node_llm("doc_qa")
+    llm = get_node_llm("doc_qa")
     llm_with_tools = llm.bind_tools(QA_TOOLS)
 
     all_messages = system_messages + state["messages"]
@@ -139,7 +120,7 @@ async def doc_gen(state: State, config: RunnableConfig) -> dict:
 
     system_messages = prompt.format_messages(file_path=file_path)
 
-    llm = _get_node_llm("doc_gen")
+    llm = get_node_llm("doc_gen")
     llm_with_tools = llm.bind_tools(TOOLS)
 
     all_messages = system_messages + state["messages"]
@@ -160,7 +141,7 @@ async def chat(state: State, config: RunnableConfig) -> dict:
 
     system_messages = prompt.format_messages(user_input=user_input)
 
-    llm = _get_node_llm("chat")
+    llm = get_node_llm("chat")
 
     all_messages = system_messages + state["messages"]
     response = await llm.ainvoke(all_messages, config=config)

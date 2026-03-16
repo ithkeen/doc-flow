@@ -16,4 +16,6 @@ from src.config.settings import Settings
 
 settings = Settings()
 
-__all__ = ["settings", "Settings"]
+from src.config.llm import get_node_llm  # noqa: E402
+
+__all__ = ["settings", "Settings", "get_node_llm"]
