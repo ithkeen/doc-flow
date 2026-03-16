@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-doc-flow is an AI-powered documentation generator that analyzes Go source code and produces structured Markdown API docs. It uses a LangGraph StateGraph with a ReAct agent loop: intent recognition routes to doc generation, doc Q&A, or general chat. Entry point `app.py` (project root) serves the Chainlit chat UI.
+doc-flow is an AI-powered documentation system for Go source code. The Chainlit chat UI (`app.py`) provides doc Q&A and general chat via a LangGraph StateGraph. API doc generation is handled exclusively by the `src/generator` CLI module.
 
 ## Commands
 
@@ -44,11 +44,7 @@ src/generator (batch doc generation CLI: depends on config, tools, prompts)
 
 **Graph orchestration (`src/graph`):**
 ```
-START -> intent_recognize -> [route_by_intent] -+-> doc_gen -> [route_doc_gen] -> tools -> doc_gen (ReAct loop)
-                                                |                     |
-                                                |                     +-> END
-                                                |
-                                                +-> doc_qa -> [route_doc_qa] -> qa_tools -> doc_qa (ReAct loop)
+START -> intent_recognize -> [route_by_intent] -+-> doc_qa -> [route_doc_qa] -> qa_tools -> doc_qa (ReAct loop)
                                                 |                     |
                                                 |                     +-> END
                                                 |
@@ -56,14 +52,13 @@ START -> intent_recognize -> [route_by_intent] -+-> doc_gen -> [route_doc_gen] -
                                                 |
                                                 +-> END (unknown intent fallback)
 ```
-- `State(TypedDict)` holds `messages` (with `add_messages` reducer), `intent`, `confidence`, `params`.
-- `intent_recognize`, `doc_gen`, `doc_qa`, and `chat` are all **async** functions that accept `RunnableConfig` as a second parameter and forward it to LLM calls. This is required for Chainlit's `LangchainCallbackHandler` and to avoid callback threading issues.
-- `intent_recognize` loads the `"intent"` prompt, calls `ChatOpenAI`, parses JSON response into `intent`/`confidence`/`params`. Uses `state["messages"][-1].content` (last message).
-- `doc_gen` loads the `"doc_gen"` prompt, binds `TOOLS` (6 tools: `scan_directory`, `read_file`, `save_document`, `read_document`, `list_documents`, `find_function`) to `ChatOpenAI`. The `doc_gen` system prompt includes a Pre-check phase that resolves short function names via `find_function` and checks for existing docs via `list_documents` before starting the 4-task workflow.
+- `State(TypedDict)` holds `messages` (with `add_messages` reducer) and `intent`.
+- `intent_recognize`, `doc_qa`, and `chat` are all **async** functions that accept `RunnableConfig` as a second parameter and forward it to LLM calls. This is required for Chainlit's `LangchainCallbackHandler` and to avoid callback threading issues.
+- `intent_recognize` loads the `"intent"` prompt, calls `ChatOpenAI`, parses JSON response to extract `intent`. Uses `state["messages"][-1].content` (last message).
 - `doc_qa` loads the `"doc_qa"` prompt, binds `QA_TOOLS` (2 tools: `read_document`, `list_documents`) to `ChatOpenAI`. Uses `_get_last_human_message()` for the user input variable.
-- `chat` loads the `"chat"` prompt, calls `ChatOpenAI` **without** binding tools (pure LLM conversation). Uses full message history for multi-turn context. System prompt softly guides users toward doc_gen/doc_qa features.
-- `route_by_intent` routes to `"doc_gen"`, `"doc_qa"`, `"chat"`, or `END`. `route_doc_gen` and `route_doc_qa` each route to their respective `ToolNode` if tool calls are present, else `END`.
-- `git_diff` tool exists but is intentionally excluded from both tool lists (future feature).
+- `chat` loads the `"chat"` prompt, calls `ChatOpenAI` **without** binding tools (pure LLM conversation). Uses full message history for multi-turn context. System prompt guides users toward doc_qa features and directs doc generation requests to the CLI tool.
+- `route_by_intent` routes to `"doc_qa"`, `"chat"`, or `END`. `route_doc_qa` routes to `"qa_tools"` ToolNode
+- `git_diff` tool exists but is intentionally excluded from `QA_TOOLS` (future feature).
 
 **Key patterns:**
 
@@ -72,7 +67,7 @@ START -> intent_recognize -> [route_by_intent] -+-> doc_gen -> [route_doc_gen] -
 - **Tool constraints**: `file_reader` truncates files over 100KB (`MAX_FILE_SIZE_KB = 100`). `doc_storage` enforces module names matching `^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$` (supports slash-separated paths like `access/order`). `git_diff` uses a 30s subprocess timeout and reads `.last_commit` to track the last doc generation point. `find_function` searches Go function definitions by regex-matching `func <name>(` patterns. Returns all matches as a list (each with file path, line number, content). Auto-escapes regex special characters. Falls back to latin-1 encoding on `UnicodeDecodeError`.
 - **JSON envelope responses**: All tools return via `ok(message, payload)` / `fail(error, message)` from `src/tools/utils.py` — consistent `{success, message, payload, error}` JSON strings.
 - **LangChain @tool decorator**: Every function in `src/tools/` is a LangChain tool with docstrings serving as LLM tool descriptions.
-- **Prompt templates**: Stored as `.md` files under `src/prompts/system/` and `src/prompts/user/`, loaded by name via `load_prompt("intent")`, `load_prompt("doc_gen")`, `load_prompt("doc_qa")`, `load_prompt("chat")`, or `load_prompt("batch_doc_gen")`. At least one of system/user must exist for a given name. The `batch_doc_gen` prompt uses explicit template variables (`{project}`, `{module}`, `{function_name}`, `{source_file}`, `{source_line}`) instead of relying on tool-based pre-check.
+- **Prompt templates**: Stored as `.md` files under `src/prompts/system/` and `src/prompts/user/`, loaded by name via `load_prompt("intent")`, `load_prompt("doc_qa")`, `load_prompt("chat")`, or `load_prompt("batch_doc_gen")`. At least one of system/user must exist for a given name. The `batch_doc_gen` prompt uses explicit template variables (`{project}`, `{module}`, `{function_name}`, `{source_file}`, `{source_line}`) instead of relying on tool-based pre-check.
 - **Structured JSON logging**: Custom `JSONFormatter` producing `{time, level, module, message, error}`. `TimedRotatingFileHandler` with 7-day retention to `logs/app.log`.
 
 
@@ -81,4 +76,4 @@ START -> intent_recognize -> [route_by_intent] -+-> doc_gen -> [route_doc_gen] -
 - Python 3.11 (`.python-version`)
 - Package manager: `uv`
 - Copy `.env.example` to `.env` and set `LLM_API_KEY` at minimum
-- Prompts, tool docstrings, and error messages are in Chinese (Simplified), except the `doc_gen` and `batch_doc_gen` system prompts which are in English
+- Prompts, tool docstrings, and error messages are in Chinese (Simplified), except the `batch_doc_gen` system prompt which is in English
