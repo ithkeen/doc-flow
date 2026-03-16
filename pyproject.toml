@@ -11,6 +11,7 @@ dependencies = [
     "langgraph>=1.0.10",
     "langgraph-cli[inmem]>=0.4.15",
     "pydantic-settings>=2.7.0",
+    "pyyaml>=6.0",
 ]
 
 [dependency-groups]
@@ -18,3 +19,7 @@ dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=0.25.0",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
