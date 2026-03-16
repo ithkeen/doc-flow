@@ -28,17 +28,12 @@ class State(TypedDict):
 
     messages: Annotated[list, add_messages]
     intent: str
-    confidence: float
-    params: dict
-
-
-INTENT_LIST = "doc_gen, doc_qa, chat"
 
 
 async def intent_recognize(state: State, config: RunnableConfig) -> dict:
     """意图识别节点。
 
-    分析用户输入，判断意图类别，返回 intent / confidence / params。
+    分析用户输入，判断意图类别，返回 intent。
     """
     prompt = load_prompt("intent")
     user_input = state["messages"][-1].content
@@ -58,24 +53,15 @@ async def intent_recognize(state: State, config: RunnableConfig) -> dict:
     try:
         parsed = json.loads(raw)
         intent = parsed.get("intent", "unknown")
-        confidence = float(parsed.get("confidence", 0.0))
-        params = parsed.get("params", {})
     except (json.JSONDecodeError, ValueError):
         logger.warning("意图识别结果解析失败，原始内容：%s", response.content)
         intent = "unknown"
-        confidence = 0.0
-        params = {}
 
-    logger.info("意图识别完成：intent=%s, confidence=%.2f", intent, confidence)
-    return {"intent": intent, "confidence": confidence, "params": params}
+    logger.info("意图识别完成：intent=%s", intent)
+    return {"intent": intent}
 
 
-from src.tools.code_scanner import scan_directory
-from src.tools.file_reader import read_file
-from src.tools.doc_storage import save_document, read_document, list_documents
-from src.tools.code_search import find_function
-
-TOOLS = [scan_directory, read_file, save_document, read_document, list_documents, find_function]
+from src.tools.doc_storage import read_document, list_documents
 
 QA_TOOLS = [read_document, list_documents]
 
@@ -109,27 +95,6 @@ async def doc_qa(state: State, config: RunnableConfig) -> dict:
     return {"messages": [response]}
 
 
-async def doc_gen(state: State, config: RunnableConfig) -> dict:
-    """文档生成节点。
-
-    使用 doc_gen 提示词和绑定工具的 LLM 生成文档。
-    与 ToolNode 形成 ReAct 循环。
-    """
-    prompt = load_prompt("doc_gen")
-    file_path = state["params"].get("file_path", "")
-
-    system_messages = prompt.format_messages(file_path=file_path)
-
-    llm = get_node_llm("doc_gen")
-    llm_with_tools = llm.bind_tools(TOOLS)
-
-    all_messages = system_messages + state["messages"]
-    response = await llm_with_tools.ainvoke(all_messages, config=config)
-
-    logger.info("文档生成节点调用完成")
-    return {"messages": [response]}
-
-
 async def chat(state: State, config: RunnableConfig) -> dict:
     """聊天节点。
 
@@ -152,20 +117,10 @@ async def chat(state: State, config: RunnableConfig) -> dict:
 
 def route_by_intent(state: State) -> str:
     """根据意图识别结果路由到对应节点。"""
-    if state["intent"] == "doc_gen":
-        return "doc_gen"
     if state["intent"] == "doc_qa":
         return "doc_qa"
     if state["intent"] == "chat":
         return "chat"
-    return END
-
-
-def route_doc_gen(state: State) -> str:
-    """根据 LLM 是否发起工具调用决定下一步。"""
-    last_message = state["messages"][-1]
-    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-        return "tools"
     return END
 
 
