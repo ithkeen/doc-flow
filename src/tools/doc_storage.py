@@ -17,7 +17,7 @@ def _validate_module_name(module_name: str) -> str | None:
     if not module_name:
         return "模块名称不能为空"
     if not _MODULE_NAME_PATTERN.match(module_name):
-        return f"模块名称 '{module_name}' 不合法，仅允许小写字母、数字和下划线，且必须以字母开头"
+        return f"模块名称 '{module_name}' 不合法，仅允许小写字母、数字、下划线和路径分隔符 /，每段必须以字母开头"
     return None
 
 
@@ -32,7 +32,7 @@ def save_document(module_name: str, api_name: str, content: str) -> str:
     文件按模块分目录存储，文件名为接口名称。
 
     Args:
-        module_name: 模块名称，如 "user"、"order"，仅允许小写字母、数字和下划线
+        module_name: 模块名称，如 "user"、"order"，支持路径形式如 "access/order"
         api_name: 接口名称，如 "CreateUser"，直接用作文件名
         content: 要保存的 Markdown 文档内容
 
