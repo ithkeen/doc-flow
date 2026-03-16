@@ -9,7 +9,7 @@ from src.tools.utils import fail, ok
 
 logger = get_logger(__name__)
 
-_MODULE_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+_MODULE_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$")
 
 
 def _validate_module_name(module_name: str) -> str | None:
