@@ -15,10 +15,19 @@ from typing_extensions import TypedDict
 from langgraph.graph import END
 from langgraph.graph.message import add_messages
 
-from src.config import settings
-from src.config.llm import get_node_llm
+from src.config.llm import get_llm
 from src.logs import get_logger
 from src.prompts import load_prompt
+from src.tools import (
+    find_function,
+    find_struct,
+    load_docgen_config,
+    match_api_name,
+    query_api_index,
+    read_file,
+    save_api_index,
+    write_file,
+)
 
 logger = get_logger(__name__)
 
@@ -42,7 +51,7 @@ async def intent_recognize(state: State, config: RunnableConfig) -> dict:
         user_input=user_input,
     )
 
-    llm = get_node_llm("intent")
+    llm = get_llm("intent")
     response = await llm.ainvoke(messages, config=config)
 
     raw = response.content
@@ -61,9 +70,16 @@ async def intent_recognize(state: State, config: RunnableConfig) -> dict:
     return {"intent": intent}
 
 
-from src.tools.doc_storage import read_document, list_documents
-
-QA_TOOLS = [read_document, list_documents]
+DOC_GEN_TOOLS = [
+    load_docgen_config,
+    match_api_name,
+    query_api_index,
+    read_file,
+    find_function,
+    find_struct,
+    write_file,
+    save_api_index,
+]
 
 
 def _get_last_human_message(messages: list) -> str:
@@ -77,19 +93,17 @@ def _get_last_human_message(messages: list) -> str:
 async def doc_qa(state: State, config: RunnableConfig) -> dict:
     """文档问答节点。
 
-    使用 doc_qa 提示词和绑定工具的 LLM 回答文档相关问题。
-    与 qa_tools ToolNode 形成 ReAct 循环。
+    使用 doc_qa 提示词回答文档相关问题。
     """
     prompt = load_prompt("doc_qa")
     user_input = _get_last_human_message(state["messages"])
 
     system_messages = prompt.format_messages(user_input=user_input)
 
-    llm = get_node_llm("doc_qa")
-    llm_with_tools = llm.bind_tools(QA_TOOLS)
+    llm = get_llm("doc_qa")
 
     all_messages = system_messages + state["messages"]
-    response = await llm_with_tools.ainvoke(all_messages, config=config)
+    response = await llm.ainvoke(all_messages, config=config)
 
     logger.info("文档问答节点调用完成")
     return {"messages": [response]}
@@ -106,7 +120,7 @@ async def chat(state: State, config: RunnableConfig) -> dict:
 
     system_messages = prompt.format_messages(user_input=user_input)
 
-    llm = get_node_llm("chat")
+    llm = get_llm("chat")
 
     all_messages = system_messages + state["messages"]
     response = await llm.ainvoke(all_messages, config=config)
@@ -119,14 +133,37 @@ def route_by_intent(state: State) -> str:
     """根据意图识别结果路由到对应节点。"""
     if state["intent"] == "doc_qa":
         return "doc_qa"
+    if state["intent"] == "doc_gen":
+        return "doc_gen"
     if state["intent"] == "chat":
         return "chat"
     return END
 
 
-def route_doc_qa(state: State) -> str:
+async def doc_gen(state: State, config: RunnableConfig) -> dict:
+    """文档生成节点。
+
+    使用 doc_gen 提示词和绑定 8 个工具的 LLM 生成 API 文档。
+    与 doc_gen_tools ToolNode 形成 ReAct 循环。
+    """
+    prompt = load_prompt("doc_gen")
+    user_input = _get_last_human_message(state["messages"])
+
+    system_messages = prompt.format_messages(user_input=user_input)
+
+    llm = get_llm("doc_gen")
+    llm_with_tools = llm.bind_tools(DOC_GEN_TOOLS)
+
+    all_messages = system_messages + state["messages"]
+    response = await llm_with_tools.ainvoke(all_messages, config=config)
+
+    logger.info("文档生成节点调用完成")
+    return {"messages": [response]}
+
+
+def route_doc_gen(state: State) -> str:
     """根据 LLM 是否发起工具调用决定下一步。"""
     last_message = state["messages"][-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-        return "qa_tools"
+        return "doc_gen_tools"
     return END

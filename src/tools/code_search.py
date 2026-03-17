@@ -85,7 +85,8 @@ def find_struct(struct_name: str, directory: str = ".") -> str:
 
     用于定位请求体、响应体等结构体定义所在的文件和行号，
     不要用于通用代码搜索。
-    传入结构体名称（不含 type 和 struct 关键字），工具会自动匹配 type ... struct 定义。
+    传入结构体名称（不含 type 和 struct 关键字），工具会自动匹配
+    标准定义（type X struct）和内嵌定义（X struct）两种形式。
 
     Args:
         struct_name: 要查找的结构体名称，如 "BuyResourceReq"
@@ -110,7 +111,7 @@ def find_struct(struct_name: str, directory: str = ".") -> str:
         return fail(f"{directory} 不是一个目录")
 
     escaped_name = re.escape(struct_name)
-    pattern = re.compile(rf"^type\s+{escaped_name}\s+struct\s*\{{")
+    pattern = re.compile(rf"^\s*(?:type\s+)?{escaped_name}\s+struct\s*\{{")
 
     go_files = sorted(
         f for f in dir_path.rglob("*.go") if not f.name.endswith("_test.go")

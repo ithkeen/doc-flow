@@ -1,8 +1,8 @@
 """读取并校验 .doc_gen.yaml 项目配置。
 
 本模块提供 Pydantic 数据模型和一个 LangChain Tool 函数，用于从
-code_space_dir 下加载文档生成配置文件（.doc_gen.yaml），校验其结构完整性后
-返回结构化配置。config_path 参数为相对于 code_space_dir 的路径。
+docs_space_dir 下加载文档生成配置文件（.doc_gen.yaml），校验其结构完整性后
+返回结构化配置。config_path 参数为相对于 docs_space_dir 的路径。
 
 工具与编程语言无关，适用于任何包含 .doc_gen.yaml 的项目。
 
@@ -125,20 +125,20 @@ logger = get_logger(__name__)
 
 @tool
 def load_docgen_config(config_path: str) -> str:
-    """读取 code_space_dir 下指定路径的 .doc_gen.yaml 配置文件，返回完整的文档生成配置。
+    """读取 docs_space_dir 下指定路径的 .doc_gen.yaml 配置文件，返回完整的文档生成配置。
 
-    根据相对路径拼接 {code_space_dir}/{config_path}，
+    根据相对路径拼接 {docs_space_dir}/{config_path}，
     解析 YAML 内容并通过 Pydantic 模型校验结构完整性。
 
     Args:
-        config_path: 相对于 code_space_dir 的配置文件路径，如 "ubill-access-api/.doc_gen.yaml"。
+        config_path: 相对于 docs_space_dir 的配置文件路径，如 "ubill-access-api/.doc_gen.yaml"。
 
     Returns:
         JSON Envelope 格式的响应字符串：
         - 成功: {"success": true, "message": "...", "payload": {配置字典}, "error": null}
         - 失败: {"success": false, "message": "...", "payload": null, "error": "..."}
     """
-    target_path = Path(settings.code_space_dir) / config_path
+    target_path = Path(settings.docs_space_dir) / config_path
 
     # 1. 检查文件是否存在
     if not target_path.is_file():

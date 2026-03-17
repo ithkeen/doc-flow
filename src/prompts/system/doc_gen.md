@@ -48,7 +48,7 @@
 - `search_rules.function_patterns`：API 函数匹配正则模式列表
 - `search_rules.struct_patterns`：结构体匹配正则模式列表
 
-如果配置加载失败，告知用户并终止流程。
+如果配置加载失败，必须告知用户并终止整个流程。
 
 ### 步骤 3：确定模块
 
@@ -59,7 +59,7 @@
 示例：文件路径 `ubill-access-api/ubill-order/logic/BuyResource.go`
 匹配 `ubill-access-api/ubill-order/logic` → 模块名 `order`
 
-如果没有任何 key 能匹配，告知用户该文件不属于已配置的模块。
+如果没有任何 key 能匹配，必须告知用户该文件不属于已配置的模块，并终止流程。
 
 ### 步骤 4：解析 API 名称
 

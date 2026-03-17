@@ -58,7 +58,7 @@ async def on_message(message: cl.Message):
             if (
                 msg.content
                 and not isinstance(msg, HumanMessage)
-                and metadata["langgraph_node"] in ("doc_qa", "chat")
+                and metadata["langgraph_node"] in ("doc_qa", "doc_gen", "chat")
             ):
                 await answer.stream_token(msg.content)
     except Exception:

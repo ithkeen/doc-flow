@@ -1,1 +1,0 @@
-请为函数 {function_name}（位于 {source_file}:{source_line}）生成接口文档，保存到 {project}/{module} 模块。
