@@ -14,3 +14,6 @@ search_rules:
   # API匹配模式（正则表达式）
   function_patterns:
     - 'http\.HandlerFunc\(\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)'
+  # 结构体定义匹配模式（正则表达式），用于匹配请求/响应等结构体定义
+  struct_patterns:
+    - 'type\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+struct\s*\{'
