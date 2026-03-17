@@ -1,6 +1,7 @@
 """代码搜索工具模块。
 
-提供在 Go 源码中按函数名精确定位函数定义的能力。
+提供在 code_space_dir 下的 Go 源码中按函数名精确定位函数定义的能力。
+directory 参数为相对于 code_space_dir 的路径，工具内部自动拼接为绝对路径。
 """
 
 import re
@@ -17,22 +18,25 @@ logger = get_logger(__name__)
 
 @tool
 def find_function(function_name: str, directory: str = ".") -> str:
-    """在指定目录下查找 Go 函数的定义位置。
+    """在 code_space_dir 下指定目录中查找 Go 函数的定义位置。
+
     仅当你需要定位一个具体的函数或方法的定义所在文件时使用此工具，
     不要用于通用代码搜索。
     传入函数名（不含 func 关键字），工具会自动匹配普通函数和方法定义。
 
     Args:
         function_name: 要查找的函数名，如 "buyResourcePostPaid"
-        directory: 搜索起始目录，默认为 "."
+        directory: 相对于 code_space_dir 的搜索起始目录，一般传入项目名称，如 "ubill-access-api"，默认为 "."
 
     Returns:
-        JSON envelope，payload 为匹配列表，每个元素包含 file（文件路径）、line（行号）、content（该行内容）。
+        JSON Envelope 格式的响应字符串：
+        - 成功: {"success": true, "message": "...", "payload": [匹配列表], "error": null}
+        - 失败: {"success": false, "message": "...", "payload": null, "error": "..."}
     """
     if not function_name or not function_name.strip():
         return fail("函数名不能为空")
 
-    dir_path = Path(settings.agent_work_dir) / directory
+    dir_path = Path(settings.code_space_dir) / directory
 
     if not dir_path.exists():
         logger.error("搜索失败：目录 %s 不存在", directory)
@@ -63,7 +67,7 @@ def find_function(function_name: str, directory: str = ".") -> str:
 
         for line_num, line in enumerate(content.splitlines(), 1):
             if pattern.match(line):
-                rel_path = str(go_file.relative_to(Path(settings.agent_work_dir)))
+                rel_path = str(go_file.relative_to(Path(settings.code_space_dir)))
                 logger.info("找到函数 %s 定义：%s:%d", function_name, rel_path, line_num)
                 matches.append({"file": rel_path, "line": line_num, "content": line.strip()})
 
