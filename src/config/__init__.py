@@ -7,8 +7,8 @@ Usage::
     from src.config import settings
 
     settings.llm.api_key
-    settings.llm.model
-    settings.docs_output_dir
+    settings.llm.default_model
+    settings.docs_space_dir
     settings.langsmith.tracing
 """
 
@@ -16,6 +16,4 @@ from src.config.settings import Settings
 
 settings = Settings()
 
-from src.config.llm import get_node_llm  # noqa: E402
-
-__all__ = ["settings", "Settings", "get_node_llm"]
+__all__ = ["settings"]
