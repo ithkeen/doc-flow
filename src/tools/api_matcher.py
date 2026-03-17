@@ -4,6 +4,8 @@
 file_path 参数为相对于 code_space_dir 的路径，工具内部自动拼接为绝对路径。
 """
 
+from __future__ import annotations
+
 import re
 from pathlib import Path
 
