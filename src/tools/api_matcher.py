@@ -77,14 +77,14 @@ def _match(file_path: str, pattern: str) -> str:
 
     # 7. Read file content (UTF-8, fallback Latin-1)
     try:
-        content = target.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        logger.warning("文件编码回退: %s 非 UTF-8，使用 latin-1 重新读取", file_path)
         try:
+            content = target.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            logger.warning("文件编码回退: %s 非 UTF-8，使用 latin-1 重新读取", file_path)
             content = target.read_text(encoding="latin-1")
-        except Exception as exc:
-            logger.error("文件读取失败: %s — %s", file_path, exc)
-            return fail(f"文件读取失败: {exc}")
+    except Exception as exc:
+        logger.error("文件读取失败: %s — %s", file_path, exc)
+        return fail(f"文件读取失败: {exc}")
 
     # 8. Line-by-line search — return first match
     for line_num, line in enumerate(content.splitlines(), 1):
