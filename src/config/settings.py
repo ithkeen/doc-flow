@@ -31,6 +31,7 @@ class LLMSettings(BaseSettings):
     default_model: str
     doc_gen_model: str
     chat_model: str
+    embed_model: str
 
 
 class LangSmithSettings(BaseSettings):
@@ -78,6 +79,19 @@ class DatabaseSettings(BaseSettings):
     database: str
 
 
+class ChromaSettings(BaseSettings):
+    """Chroma 向量数据库配置。"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="CHROMA_",
+        env_file=_ENV_FILE,
+        extra="ignore",
+    )
+
+    persist_dir: str = "./data/chroma"
+    collection_name: str = "ubill_docs"
+
+
 class Settings(BaseSettings):
     """应用根配置。
 
@@ -98,3 +112,4 @@ class Settings(BaseSettings):
     # 不使用 default_factory=DatabaseSettings，因为 DB_* 环境变量是可选的。
     # 未配置时 db 为 None，tool 内部会懒加载。
     db: DatabaseSettings | None = None
+    chroma: ChromaSettings = Field(default_factory=ChromaSettings)

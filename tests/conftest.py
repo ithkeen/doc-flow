@@ -22,6 +22,8 @@ _DUMMY_ENV = {
     "LLM_DEFAULT_MODEL": "test-model",
     "LLM_DOC_GEN_MODEL": "test-model",
     "LLM_CHAT_MODEL": "test-model",
+    "LLM_EMBED_MODEL": "text-embedding-3-small",
+    "CHROMA_PERSIST_DIR": "/tmp/test-chroma",
 }
 
 
