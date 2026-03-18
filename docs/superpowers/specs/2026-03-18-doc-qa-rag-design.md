@@ -88,10 +88,12 @@ python scripts/index_docs.py --file project_a/mod/Api.md    # 索引单个文件
 **`src/rag/__init__.py`** — 模块入口
 
 **`src/rag/retriever.py`** — 核心检索逻辑：
-- `get_retriever(k=3)` → 返回 Chroma retriever 实例（使用模块级缓存避免重复初始化）
-  - 初始化 Chroma client（持久化模式）
-  - 获取 `settings.chroma.collection_name` collection
+- `get_retriever(k=3)` → 返回 Chroma retriever 实例
+  - 使用 `@functools.lru_cache()` 缓存 Chroma client 和 retriever，避免每次请求重复初始化
+  - 使用 `chromadb.PersistentClient(path=settings.chroma.persist_dir)` 初始化
+  - 获取 `settings.chroma.collection_name` collection（不存在时自动创建）
   - 返回 `as_retriever(search_kwargs={"k": k})`
+  - 错误处理：Chroma 初始化或检索失败时，捕获异常并记录日志，返回空列表（不中断节点执行）
 - `format_retrieved_docs(docs: list[Document]) -> str` → 格式化检索结果
   - 输入：LangChain Document 列表
   - 输出：格式化的文本字符串，每个文档包含来源标注
@@ -114,7 +116,7 @@ python scripts/index_docs.py --file project_a/mod/Api.md    # 索引单个文件
 
 **改造后逻辑：**
 ```python
-async def doc_qa(state: State) -> dict:
+async def doc_qa(state: State, config: RunnableConfig) -> dict:
     prompt_template = load_prompt("doc_qa")
     user_input = _get_last_human_message(state["messages"])
 
@@ -123,14 +125,17 @@ async def doc_qa(state: State) -> dict:
     docs = await retriever.ainvoke(user_input)
     context = format_retrieved_docs(docs)
 
-    # context 注入 prompt
-    formatted = prompt_template.format_messages(
+    # context 注入 prompt，生成系统消息
+    formatted_system = prompt_template.format_messages(
         user_input=user_input,
         context=context
     )
 
+    # 系统消息 + 对话历史
+    all_messages = formatted_system + state["messages"]
+
     llm = get_llm("doc_qa")
-    response = await llm.ainvoke(formatted + state["messages"])
+    response = await llm.ainvoke(all_messages, config=config)
     return {"messages": [response]}
 ```
 
@@ -158,8 +163,8 @@ CHROMA_PERSIST_DIR=./data/chroma
 
 **Settings 扩展（`src/config/settings.py`）：**
 - `LLMSettings` 新增 `embed_model: str` 字段
-- 新增 `ChromaSettings` 配置类（`persist_dir`, `collection_name="ubill_docs"`）
-- `Settings` 新增 `chroma: ChromaSettings` 字段
+- 新增 `ChromaSettings` 配置类（`persist_dir: str = "./data/chroma"`, `collection_name: str = "ubill_docs"`）
+- `Settings` 新增 `chroma: ChromaSettings = Field(default_factory=ChromaSettings)` 字段（必需）
 
 **LLM 配置（`src/config/llm.py`）：**
 - 无需新增函数（`get_embeddings()` 放在 `src/rag/embeddings.py` 中）
