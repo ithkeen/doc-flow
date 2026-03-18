@@ -18,6 +18,7 @@ from langgraph.graph.message import add_messages
 from src.config.llm import get_llm
 from src.logs import get_logger
 from src.prompts import load_prompt
+from src.rag import get_retriever, format_retrieved_docs
 from src.tools import (
     find_function,
     find_struct,
@@ -93,12 +94,25 @@ def _get_last_human_message(messages: list) -> str:
 async def doc_qa(state: State, config: RunnableConfig) -> dict:
     """文档问答节点。
 
-    使用 doc_qa 提示词回答文档相关问题。
+    从 Chroma 向量库检索相关文档，注入 prompt 上下文，生成回答。
     """
     prompt = load_prompt("doc_qa")
     user_input = _get_last_human_message(state["messages"])
 
-    system_messages = prompt.format_messages(user_input=user_input)
+    # 向量检索（失败时降级为空上下文）
+    try:
+        retriever = get_retriever()
+        docs = await retriever.ainvoke(user_input)
+        context = format_retrieved_docs(docs)
+    except Exception:
+        logger.exception("文档检索失败，使用空上下文")
+        context = ""
+
+    # context 注入 prompt
+    system_messages = prompt.format_messages(
+        user_input=user_input,
+        context=context,
+    )
 
     llm = get_llm("doc_qa")
 
