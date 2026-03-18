@@ -13,6 +13,9 @@ import argparse
 import sys
 from pathlib import Path
 
+# 将项目根目录加入 sys.path，确保能找到 src 模块
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 

@@ -12,6 +12,7 @@ dependencies = [
     "langchain-openai>=1.1.11",
     "langgraph>=1.0.10",
     "langgraph-cli[inmem]>=0.4.15",
+    "mysql-connector-python>=9.6.0",
     "pydantic-settings>=2.7.0",
     "pyyaml>=6.0",
 ]
