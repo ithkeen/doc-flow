@@ -6,7 +6,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "chainlit",
+    "chromadb>=0.5.0",
     "langchain>=1.2.10",
+    "langchain-chroma>=0.2.0",
     "langchain-openai>=1.1.11",
     "langgraph>=1.0.10",
     "langgraph-cli[inmem]>=0.4.15",
