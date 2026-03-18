@@ -24,3 +24,6 @@ logs/
 # Chainlit
 .chainlit/
 chainlit.md
+
+# Chroma vector store data
+data/chroma/
