@@ -23,7 +23,12 @@ from src.graph.nodes import (
 )
 
 
-def build_graph(checkpointer: BaseCheckpointSaver | None = None) -> CompiledStateGraph:
+def create_graph() -> CompiledStateGraph:
+    """langgraph dev 入口：无参工厂函数，checkpointer 由 API Server 管理。"""
+    return build_graph()
+
+
+def build_graph(checkpointer=None) -> CompiledStateGraph:
     """构建并编译 agent 工作流图。
 
     Returns:
