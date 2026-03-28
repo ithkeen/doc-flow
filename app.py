@@ -59,7 +59,7 @@ async def on_message(message: cl.Message):
             if (
                 msg.content
                 and not isinstance(msg, HumanMessage)
-                and metadata["langgraph_node"] in ("doc_qa", "doc_gen", "chat")
+                and metadata["langgraph_node"] in ("doc_qa", "doc_gen", "chat", "project_explore")
             ):
                 text = msg.content
                 filtered_parts: list[str] = []
