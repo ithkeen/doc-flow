@@ -92,7 +92,7 @@ def find_files(directory: str, pattern: str) -> str:
 - 排除 `.git`、`node_modules`、`vendor` 等
 - 超过 100 个结果时截断并提示
 
-两个新工具放置在 `src/tools/explorer.py`，遵循现有的 `ok()`/`fail()` JSON 信封约定。
+两个新工具放置在 `src/tools/file.py`，与现有的 `read_file`/`write_file` 在一起，遵循现有的 `ok()`/`fail()` JSON 信封约定。
 
 ## 节点实现
 
@@ -222,7 +222,7 @@ graph.add_edge("explore_tools", "project_explore")
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| `src/tools/explorer.py` | **新建** | `list_directory`、`find_files` 工具 |
+| `src/tools/file.py` | 修改 | 新增 `list_directory`、`find_files` 工具 |
 | `src/graph/nodes.py` | 修改 | 新增 `project_explore` 节点、`route_project_explore` 路由、`EXPLORE_TOOLS` 列表 |
 | `src/graph/graph.py` | 修改 | 注册新节点和边、更新 `route_by_intent` |
 | `src/prompts/system/project_explore.md` | **新建** | project_explore 系统提示 |
