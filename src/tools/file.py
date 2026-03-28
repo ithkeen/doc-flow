@@ -270,17 +270,36 @@ def find_files(directory: str, pattern: str) -> str:
     if not target.is_dir():
         return fail(error=f"{directory} 不是一个目录")
 
+    # Expand brace syntax (e.g. "*.{yaml,yml,json}") into multiple glob calls.
+    # Python's Path.glob() does not support brace expansion unlike bash.
+    import re as _re
+
+    def _expand_braces(pat: str) -> list[str]:
+        """Expand {a,b,c} into multiple pattern variants (Python glob has no brace expansion)."""
+        m = _re.search(r"\{([^}]+)\}", pat)
+        if not m:
+            return [pat]
+        alternatives = m.group(1).split(",")
+        return [pat[: m.start()] + alt + pat[m.end() :] for alt in alternatives]
+
+    patterns = _expand_braces(pattern)
+
     matches = []
     truncated = False
-    for p in target.glob(pattern):
-        if not p.is_file():
-            continue
-        parts = p.relative_to(base).parts
-        if any(part in _NOISE_DIRS for part in parts):
-            continue
-        matches.append(str(p.relative_to(base)))
-        if len(matches) >= MAX_FIND_RESULTS:
-            truncated = True
+    seen: set[Path] = set()
+    for pat in patterns:
+        for matched in target.glob(pat):
+            if matched in seen or not matched.is_file():
+                continue
+            seen.add(matched)
+            parts = matched.relative_to(base).parts
+            if any(part in _NOISE_DIRS for part in parts):
+                continue
+            matches.append(str(matched.relative_to(base)))
+            if len(matches) >= MAX_FIND_RESULTS:
+                truncated = True
+                break
+        if truncated:
             break
 
     matches.sort()

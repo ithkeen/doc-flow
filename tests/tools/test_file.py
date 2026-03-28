@@ -196,3 +196,22 @@ class TestFindFiles:
         assert result["success"] is True
         assert len(result["payload"]) == 100
         assert "截断" in result["message"]
+
+    def test_expands_brace_syntax(self, code_dir):
+        """find_files expands {yaml,yml,json} brace syntax (Python glob has no brace expansion)."""
+        from src.tools.file import find_files
+
+        proj = code_dir / "proj"
+        deploy = proj / "deploy"
+        deploy.mkdir(parents=True)
+        (deploy / "config.yaml").write_text("key: value", encoding="utf-8")
+        (deploy / "app.yml").write_text("env: prod", encoding="utf-8")
+        (deploy / "db.json").write_text('{"host":"localhost"}', encoding="utf-8")
+
+        result = json.loads(find_files.invoke({"directory": "proj", "pattern": "**/deploy/**/*.{yaml,yml,json}"}))
+
+        assert result["success"] is True
+        paths = result["payload"]
+        assert any(p.endswith(".yaml") for p in paths)
+        assert any(p.endswith(".yml") for p in paths)
+        assert any(p.endswith(".json") for p in paths)
