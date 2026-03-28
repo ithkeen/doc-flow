@@ -183,3 +183,65 @@ def read_file(file_path: str) -> str:
 
     logger.info("文件已读取：%s（%.1fKB）", file_path, file_size_kb)
     return ok(f"已读取文件 {file_path}", payload=content)
+
+
+# ---------------------------------------------------------------------------
+# Directory & file search tools (project exploration)
+# ---------------------------------------------------------------------------
+
+_NOISE_DIRS = {".git", "node_modules", "vendor", "__pycache__", ".idea", ".vscode"}
+
+MAX_DIR_ENTRIES = 200
+
+
+@tool
+def list_directory(path: str, max_depth: int = 1) -> str:
+    """列出 code_space_dir 下指定路径的文件和子目录。
+
+    Args:
+        path: 相对于 code_space_dir 的目录路径。
+        max_depth: 递归深度，1=仅当前层，2=包含子目录内容，以此类推。
+
+    Returns:
+        JSON Envelope 格式的响应字符串，payload 为目录条目列表。
+    """
+    target = Path(settings.code_space_dir) / path
+
+    if not target.exists():
+        return fail(error=f"目录 {path} 不存在")
+    if not target.is_dir():
+        return fail(error=f"{path} 不是一个目录")
+
+    def _scan(dir_path: Path, depth: int) -> list[dict]:
+        entries = []
+        try:
+            children = sorted(dir_path.iterdir(), key=lambda p: (p.is_file(), p.name))
+        except PermissionError:
+            return entries
+
+        for child in children:
+            if child.name in _NOISE_DIRS:
+                continue
+            if child.is_dir():
+                entry = {"name": child.name, "type": "dir"}
+                if depth < max_depth:
+                    entry["children"] = _scan(child, depth + 1)
+                entries.append(entry)
+            elif child.is_file():
+                entries.append({
+                    "name": child.name,
+                    "type": "file",
+                    "size": child.stat().st_size,
+                })
+        return entries
+
+    entries = _scan(target, 1)
+
+    if len(entries) > MAX_DIR_ENTRIES:
+        entries = entries[:MAX_DIR_ENTRIES]
+        return ok(
+            message=f"目录 {path} 条目过多，已截断为前 {MAX_DIR_ENTRIES} 项",
+            payload=entries,
+        )
+
+    return ok(message=f"已列出目录 {path}（{len(entries)} 项）", payload=entries)
