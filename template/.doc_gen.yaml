@@ -1,19 +1,29 @@
-# API文档生成配置
+# 文档生成配置
 
 # 模块配置
 modules:
-  # 模块映射：路径 -> 模块名称
+  # 模块映射：路径 -> 模块条目
+  # type 支持: "api"（HTTP接口，默认）、"cron"（定时任务）、"mq"（消息订阅）
+  # 纯字符串值向后兼容，等价于 {name: 字符串值, type: "api"}
   mapping:
-    "ubill-access-api/ubill-order/logic": "order"
-    "ubill-access-api/ubill-transaction/logic": "transaction"
-    "ubill-access-api/ubill-resource/logic": "resource"
-    "ubill-access-api/ubill-surround/logic": "surround"
+    "ubill-access-api/ubill-order/logic":
+      name: "order"
+      type: "api"
+    "ubill-access-api/ubill-transaction/logic":
+      name: "transaction"
+      type: "api"
+    "ubill-access-api/ubill-resource/logic":
+      name: "resource"
+      type: "api"
+    "ubill-access-api/ubill-surround/logic":
+      name: "surround"
+      type: "api"
 
-# API搜索规则
+# 搜索规则
 search_rules:
-  # API匹配模式（正则表达式）
+  # 函数匹配模式（正则表达式）
   function_patterns:
     - 'http\.HandlerFunc\(\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)'
-  # 结构体定义匹配模式（正则表达式），用于匹配请求/响应等结构体定义
+  # 结构体定义匹配模式（正则表达式）
   struct_patterns:
     - '^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s+struct\s*\{'
