@@ -48,6 +48,7 @@ async def on_message(message: cl.Message):
         configurable={"thread_id": thread_id},
     )
     answer = cl.Message(content="")
+    in_think = False
 
     try:
         async for msg, metadata in graph.astream(
@@ -60,7 +61,29 @@ async def on_message(message: cl.Message):
                 and not isinstance(msg, HumanMessage)
                 and metadata["langgraph_node"] in ("doc_qa", "doc_gen", "chat")
             ):
-                await answer.stream_token(msg.content)
+                text = msg.content
+                filtered_parts: list[str] = []
+                i = 0
+                while i < len(text):
+                    if in_think:
+                        close_pos = text.find("</think>", i)
+                        if close_pos != -1:
+                            i = close_pos + len("</think>")
+                            in_think = False
+                        else:
+                            break
+                    else:
+                        open_pos = text.find("<think>", i)
+                        if open_pos != -1:
+                            filtered_parts.append(text[i:open_pos])
+                            i = open_pos + len("<think>")
+                            in_think = True
+                        else:
+                            filtered_parts.append(text[i:])
+                            break
+                filtered = "".join(filtered_parts)
+                if filtered:
+                    await answer.stream_token(filtered)
     except Exception:
         logger.exception("graph 执行出错")
         answer.content = "抱歉，处理过程中出现错误，请稍后重试。"
