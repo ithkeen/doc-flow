@@ -245,3 +245,48 @@ def list_directory(path: str, max_depth: int = 1) -> str:
         )
 
     return ok(message=f"已列出目录 {path}（{len(entries)} 项）", payload=entries)
+
+
+MAX_FIND_RESULTS = 100
+
+
+@tool
+def find_files(directory: str, pattern: str) -> str:
+    """在 code_space_dir 下指定目录中按 glob 模式搜索文件。
+
+    Args:
+        directory: 相对于 code_space_dir 的搜索起始目录。
+        pattern: glob 模式，如 "*.go"、"**/main.go"、"**/deploy/*.yaml"。
+
+    Returns:
+        JSON Envelope 格式的响应字符串，payload 为匹配文件路径列表（相对于 code_space_dir）。
+    """
+    base = Path(settings.code_space_dir)
+    target = base / directory
+
+    if not target.exists():
+        return fail(error=f"目录 {directory} 不存在")
+    if not target.is_dir():
+        return fail(error=f"{directory} 不是一个目录")
+
+    matches = []
+    for path in sorted(target.glob(pattern)):
+        if not path.is_file():
+            continue
+        # Skip noise directories
+        parts = path.relative_to(base).parts
+        if any(part in _NOISE_DIRS for part in parts):
+            continue
+        matches.append(str(path.relative_to(base)))
+
+    if len(matches) > MAX_FIND_RESULTS:
+        matches = matches[:MAX_FIND_RESULTS]
+        return ok(
+            message=f"匹配文件过多，已截断为前 {MAX_FIND_RESULTS} 项",
+            payload=matches,
+        )
+
+    return ok(
+        message=f"找到 {len(matches)} 个匹配文件",
+        payload=matches,
+    )

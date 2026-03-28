@@ -113,3 +113,86 @@ class TestListDirectory:
         assert result["success"] is True
         assert len(result["payload"]) == 200
         assert "截断" in result["message"]
+
+
+class TestFindFiles:
+    def test_finds_go_files(self, code_dir):
+        """find_files returns matching .go files."""
+        from src.tools.file import find_files
+
+        proj = code_dir / "proj"
+        (proj / "cmd").mkdir(parents=True)
+        (proj / "cmd" / "main.go").write_text("package main", encoding="utf-8")
+        (proj / "cmd" / "README.md").write_text("# readme", encoding="utf-8")
+
+        result = json.loads(find_files.invoke({"directory": "proj", "pattern": "**/*.go"}))
+
+        assert result["success"] is True
+        assert "proj/cmd/main.go" in result["payload"]
+        assert not any(f.endswith(".md") for f in result["payload"])
+
+    def test_finds_by_name(self, code_dir):
+        """find_files matches specific filename patterns."""
+        from src.tools.file import find_files
+
+        proj = code_dir / "proj"
+        (proj / "svc1" / "cmd").mkdir(parents=True)
+        (proj / "svc2" / "cmd").mkdir(parents=True)
+        (proj / "svc1" / "cmd" / "main.go").write_text("package main", encoding="utf-8")
+        (proj / "svc2" / "cmd" / "main.go").write_text("package main", encoding="utf-8")
+
+        result = json.loads(find_files.invoke({"directory": "proj", "pattern": "**/main.go"}))
+
+        assert result["success"] is True
+        assert len(result["payload"]) == 2
+
+    def test_excludes_noise_dirs(self, code_dir):
+        """find_files excludes .git, vendor, etc."""
+        from src.tools.file import find_files
+
+        proj = code_dir / "proj"
+        (proj / "src").mkdir(parents=True)
+        (proj / "vendor" / "lib").mkdir(parents=True)
+        (proj / "src" / "main.go").write_text("package main", encoding="utf-8")
+        (proj / "vendor" / "lib" / "dep.go").write_text("package lib", encoding="utf-8")
+
+        result = json.loads(find_files.invoke({"directory": "proj", "pattern": "**/*.go"}))
+
+        assert result["success"] is True
+        paths = result["payload"]
+        assert any("src/main.go" in p for p in paths)
+        assert not any("vendor" in p for p in paths)
+
+    def test_empty_result(self, code_dir):
+        """find_files returns empty list when no match."""
+        from src.tools.file import find_files
+
+        (code_dir / "proj").mkdir()
+
+        result = json.loads(find_files.invoke({"directory": "proj", "pattern": "**/*.go"}))
+
+        assert result["success"] is True
+        assert result["payload"] == []
+
+    def test_nonexistent_directory(self, code_dir):
+        """find_files returns fail for nonexistent directory."""
+        from src.tools.file import find_files
+
+        result = json.loads(find_files.invoke({"directory": "nonexistent", "pattern": "*.go"}))
+
+        assert result["success"] is False
+
+    def test_truncates_large_result(self, code_dir):
+        """find_files truncates results exceeding 100 files."""
+        from src.tools.file import find_files
+
+        proj = code_dir / "proj"
+        proj.mkdir()
+        for i in range(110):
+            (proj / f"file_{i:03d}.go").write_text("package main", encoding="utf-8")
+
+        result = json.loads(find_files.invoke({"directory": "proj", "pattern": "*.go"}))
+
+        assert result["success"] is True
+        assert len(result["payload"]) == 100
+        assert "截断" in result["message"]
