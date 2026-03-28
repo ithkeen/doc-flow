@@ -54,18 +54,45 @@ from src.tools.utils import fail, ok
 # ---------------------------------------------------------------------------
 
 
+class ModuleEntry(BaseModel):
+    """单个模块条目。
+
+    Attributes:
+        name: 模块名称。
+        type: 处理函数类型，如 "api"、"cron"、"mq"。默认为 "api"。
+    """
+
+    name: str
+    type: str = "api"
+
+
 class ModulesConfig(BaseModel):
     """模块映射配置。
 
     Attributes:
-        mapping: 扫描路径到模块名称的映射字典，至少包含一项。
+        mapping: 扫描路径到模块条目的映射字典，至少包含一项。
+                 值可以是 ModuleEntry 对象或纯字符串（向后兼容，自动转为 type="api"）。
     """
 
-    mapping: dict[str, str]
+    mapping: dict[str, ModuleEntry]
+
+    @field_validator("mapping", mode="before")
+    @classmethod
+    def normalize_mapping_values(cls, v: dict) -> dict:
+        """将纯字符串值归一化为 ModuleEntry 格式。"""
+        if not isinstance(v, dict):
+            return v
+        normalized = {}
+        for key, val in v.items():
+            if isinstance(val, str):
+                normalized[key] = {"name": val, "type": "api"}
+            else:
+                normalized[key] = val
+        return normalized
 
     @field_validator("mapping")
     @classmethod
-    def mapping_must_not_be_empty(cls, v: dict[str, str]) -> dict[str, str]:
+    def mapping_must_not_be_empty(cls, v: dict[str, ModuleEntry]) -> dict[str, ModuleEntry]:
         """确保 mapping 至少包含一项。"""
         if not v:
             raise ValueError("mapping 不能为空")
