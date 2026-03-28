@@ -168,59 +168,39 @@ def route_by_intent(state: State) -> str:
     return END
 
 
-async def doc_gen(state: State, config: RunnableConfig) -> dict:
-    """文档生成节点。
+def _make_react_node(prompt_name: str, tools: list):
+    """创建 ReAct 循环节点：加载 prompt、绑定工具、调用 LLM。"""
 
-    使用 doc_gen 提示词和绑定 8 个工具的 LLM 生成 API 文档。
-    与 doc_gen_tools ToolNode 形成 ReAct 循环。
-    """
-    prompt = load_prompt("doc_gen")
-    user_input = _get_last_human_message(state["messages"])
+    async def node(state: State, config: RunnableConfig) -> dict:
+        prompt = load_prompt(prompt_name)
+        user_input = _get_last_human_message(state["messages"])
+        system_messages = prompt.format_messages(user_input=user_input)
+        llm = get_llm(prompt_name)
+        llm_with_tools = llm.bind_tools(tools)
+        all_messages = system_messages + state["messages"]
+        response = await llm_with_tools.ainvoke(all_messages, config=config)
+        logger.info("%s 节点调用完成", prompt_name)
+        return {"messages": [response]}
 
-    system_messages = prompt.format_messages(user_input=user_input)
-
-    llm = get_llm("doc_gen")
-    llm_with_tools = llm.bind_tools(DOC_GEN_TOOLS)
-
-    all_messages = system_messages + state["messages"]
-    response = await llm_with_tools.ainvoke(all_messages, config=config)
-
-    logger.info("文档生成节点调用完成")
-    return {"messages": [response]}
+    node.__name__ = prompt_name
+    return node
 
 
-async def project_explore(state: State, config: RunnableConfig) -> dict:
-    """项目探索节点。
-
-    使用 LLM + 工具以 ReAct 方式探索项目结构，
-    发现服务、识别类型、穷举功能点，输出 task.md。
-    """
-    prompt = load_prompt("project_explore")
-    user_input = _get_last_human_message(state["messages"])
-
-    system_messages = prompt.format_messages(user_input=user_input)
-
-    llm = get_llm("project_explore")
-    llm_with_tools = llm.bind_tools(EXPLORE_TOOLS)
-
-    all_messages = system_messages + state["messages"]
-    response = await llm_with_tools.ainvoke(all_messages, config=config)
-
-    logger.info("项目探索节点调用完成")
-    return {"messages": [response]}
+doc_gen = _make_react_node("doc_gen", DOC_GEN_TOOLS)
+project_explore = _make_react_node("project_explore", EXPLORE_TOOLS)
 
 
-def route_doc_gen(state: State) -> str:
-    """根据 LLM 是否发起工具调用决定下一步。"""
-    last_message = state["messages"][-1]
-    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-        return "doc_gen_tools"
-    return END
+def _make_tool_router(tool_node_name: str):
+    """创建工具路由函数：有 tool_calls 则路由到工具节点，否则结束。"""
+
+    def router(state: State) -> str:
+        last_message = state["messages"][-1]
+        if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+            return tool_node_name
+        return END
+
+    return router
 
 
-def route_project_explore(state: State) -> str:
-    """根据 LLM 是否发起工具调用决定下一步。"""
-    last_message = state["messages"][-1]
-    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-        return "explore_tools"
-    return END
+route_doc_gen = _make_tool_router("doc_gen_tools")
+route_project_explore = _make_tool_router("explore_tools")

@@ -205,6 +205,7 @@ def list_directory(path: str, max_depth: int = 1) -> str:
     Returns:
         JSON Envelope 格式的响应字符串，payload 为目录条目列表。
     """
+    max_depth = min(max_depth, 5)
     target = Path(settings.code_space_dir) / path
 
     if not target.exists():
@@ -270,17 +271,21 @@ def find_files(directory: str, pattern: str) -> str:
         return fail(error=f"{directory} 不是一个目录")
 
     matches = []
-    for path in sorted(target.glob(pattern)):
-        if not path.is_file():
+    truncated = False
+    for p in target.glob(pattern):
+        if not p.is_file():
             continue
-        # Skip noise directories
-        parts = path.relative_to(base).parts
+        parts = p.relative_to(base).parts
         if any(part in _NOISE_DIRS for part in parts):
             continue
-        matches.append(str(path.relative_to(base)))
+        matches.append(str(p.relative_to(base)))
+        if len(matches) >= MAX_FIND_RESULTS:
+            truncated = True
+            break
 
-    if len(matches) > MAX_FIND_RESULTS:
-        matches = matches[:MAX_FIND_RESULTS]
+    matches.sort()
+
+    if truncated:
         return ok(
             message=f"匹配文件过多，已截断为前 {MAX_FIND_RESULTS} 项",
             payload=matches,
