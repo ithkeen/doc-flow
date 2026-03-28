@@ -20,8 +20,10 @@ from src.logs import get_logger
 from src.prompts import load_prompt
 from src.rag import get_retriever, format_retrieved_docs
 from src.tools import (
+    find_files,
     find_function,
     find_struct,
+    list_directory,
     load_docgen_config,
     match_api_name,
     query_api_index,
@@ -80,6 +82,16 @@ DOC_GEN_TOOLS = [
     find_struct,
     write_file,
     save_api_index,
+]
+
+EXPLORE_TOOLS = [
+    list_directory,
+    find_files,
+    read_file,
+    find_function,
+    find_struct,
+    load_docgen_config,
+    write_file,
 ]
 
 
@@ -151,6 +163,8 @@ def route_by_intent(state: State) -> str:
         return "doc_gen"
     if state["intent"] == "chat":
         return "chat"
+    if state["intent"] == "project_explore":
+        return "project_explore"
     return END
 
 
@@ -175,9 +189,38 @@ async def doc_gen(state: State, config: RunnableConfig) -> dict:
     return {"messages": [response]}
 
 
+async def project_explore(state: State, config: RunnableConfig) -> dict:
+    """项目探索节点。
+
+    使用 LLM + 工具以 ReAct 方式探索项目结构，
+    发现服务、识别类型、穷举功能点，输出 task.md。
+    """
+    prompt = load_prompt("project_explore")
+    user_input = _get_last_human_message(state["messages"])
+
+    system_messages = prompt.format_messages(user_input=user_input)
+
+    llm = get_llm("project_explore")
+    llm_with_tools = llm.bind_tools(EXPLORE_TOOLS)
+
+    all_messages = system_messages + state["messages"]
+    response = await llm_with_tools.ainvoke(all_messages, config=config)
+
+    logger.info("项目探索节点调用完成")
+    return {"messages": [response]}
+
+
 def route_doc_gen(state: State) -> str:
     """根据 LLM 是否发起工具调用决定下一步。"""
     last_message = state["messages"][-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         return "doc_gen_tools"
+    return END
+
+
+def route_project_explore(state: State) -> str:
+    """根据 LLM 是否发起工具调用决定下一步。"""
+    last_message = state["messages"][-1]
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        return "explore_tools"
     return END
