@@ -59,7 +59,7 @@ async def on_message(message: cl.Message):
             if (
                 msg.content
                 and not isinstance(msg, HumanMessage)
-                and metadata["langgraph_node"] in ("doc_qa", "doc_gen", "chat", "project_explore")
+                and metadata["langgraph_node"] in ("doc_qa", "doc_gen", "chat", "project_explore", "synthesize_overview")
             ):
                 text = msg.content
                 if not in_think and "<think>" not in text:

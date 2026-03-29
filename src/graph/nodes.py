@@ -6,15 +6,19 @@
 from __future__ import annotations
 
 import json
+import operator
 import re
+from pathlib import Path
 from typing import Annotated
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from typing_extensions import TypedDict
 from langgraph.graph import END
 from langgraph.graph.message import add_messages
+from langgraph.types import Send
 
+from src.config import settings
 from src.config.llm import get_llm
 from src.logs import get_logger
 from src.prompts import load_prompt
@@ -40,6 +44,11 @@ class State(TypedDict):
 
     messages: Annotated[list, add_messages]
     intent: str
+    # project_explore dispatch fields
+    task_file_paths: Annotated[list[str], operator.add]
+    """待生成文档的源码文件路径列表（从 task.md 解析）。"""
+    generated_doc_paths: Annotated[list[str], operator.add]
+    """各 worker 生成的文档文件路径列表（累积）。"""
 
 
 async def intent_recognize(state: State, config: RunnableConfig) -> dict:
@@ -204,3 +213,169 @@ def _make_tool_router(tool_node_name: str):
 
 route_doc_gen = _make_tool_router("doc_gen_tools")
 route_project_explore = _make_tool_router("explore_tools")
+
+
+# ---------------------------------------------------------------------------
+# project_explore → doc_gen parallel dispatch
+# ---------------------------------------------------------------------------
+
+
+def _read_task_file(project_name: str) -> tuple[str, list[str]]:
+    """从 docs_space_dir 读取 task.md，返回 (原始内容, 源码文件路径列表)。
+
+    解析 markdown 表格，从 API列表 / 定时任务列表 / 消息订阅列表 的处理文件列
+    提取所有 .go/.py/.java/.ts/.js 源码文件路径。
+    """
+    task_path = Path(settings.docs_space_dir) / project_name / "task.md"
+    if not task_path.exists():
+        return "", []
+    content = task_path.read_text(encoding="utf-8")
+
+    file_paths: list[str] = []
+    for line in content.splitlines():
+        line = line.strip()
+        # 跳过非表格行
+        if not line or line.startswith("#") or line.startswith("---"):
+            continue
+        if line.startswith("|"):
+            # 解析 markdown 表格行：| col1 | col2 | col3 | col4 |
+            cols = [c.strip() for c in line.split("|")]
+            # 去掉首尾空字符串（split 时两端产生的空列）
+            cols = [c for c in cols if c]
+            # 查找处理文件列（最后一个含 "/" 的列，通常是第 3 或 4 列）
+            for col in cols:
+                if "/" in col and any(ext in col for ext in (".go", ".py", ".java", ".ts", ".js")):
+                    file_paths.append(col)
+                    break
+    return content, file_paths
+
+
+async def doc_gen_dispatcher(state: State, config: RunnableConfig) -> dict:
+    """读取 project_explore 输出的 task.md，提取源码文件路径写入 state。
+
+    解析 task.md 提取所有源码文件路径，写入 task_file_paths 供后续 Send fan-out 使用。
+    """
+    logger.info("doc_gen_dispatcher 开始解析 task.md")
+
+    # 从 project_explore 的 tool_calls 中找到写入的 task.md 路径
+    task_file_path = ""
+    for msg in reversed(state["messages"]):
+        if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
+            for tc in msg.tool_calls or []:
+                if tc["name"] == "write_file":
+                    fp = tc["args"].get("file_path", "")
+                    if "task.md" in fp:
+                        task_file_path = fp
+                        break
+        if task_file_path:
+            break
+
+    if not task_file_path:
+        logger.warning("未找到 task.md 写入记录，跳过 dispatch")
+        return {"task_file_paths": []}
+
+    # 提取项目名：task_file_path 格式 "{项目名}/task.md"
+    project_name = task_file_path.replace("/task.md", "").split("/")[0]
+
+    _, file_paths = _read_task_file(project_name)
+    logger.info("从 task.md 解析到 %d 个待生成文件", len(file_paths))
+
+    return {"task_file_paths": file_paths}
+
+
+def route_doc_gen_dispatcher(state: State) -> list[Send]:
+    """Send fan-out：有待处理文件时，为每个文件创建 Send 到 doc_gen_worker。"""
+    file_paths = state.get("task_file_paths", [])
+    if not file_paths:
+        return []
+    return [Send("doc_gen_worker", {"file_path": fp}) for fp in file_paths]
+
+
+async def doc_gen_worker(state: State, config: RunnableConfig) -> dict:
+    """单个文件生成文档 worker（由 Send 并行调用）。
+
+    Send 传递 {"file_path": ...}，本函数构造提示消息并调用 doc_gen ReAct 循环。
+    返回 generated_doc_paths 以累积到主状态。
+    """
+    file_path = state.get("file_path", "")  # type: ignore[index]
+    if not file_path:
+        return {"generated_doc_paths": []}
+
+    project_name = file_path.split("/")[0] if "/" in file_path else ""
+    user_input = f"生成 {file_path} 的文档"
+
+    # 构造提示消息，复用 doc_gen prompt 格式
+    synthetic_msg = HumanMessage(content=user_input)
+
+    # 临时状态，仅含 messages（其他 key 由调用方管理）
+    temp_state: State = {
+        "messages": [synthetic_msg],
+        "intent": "doc_gen",
+        "task_file_paths": [],
+        "generated_doc_paths": [],
+    }
+    temp_config: RunnableConfig = {"configurable": config.get("configurable", {})}
+
+    # 复用 doc_gen node 函数（内部 ToolNode 循环直到无 tool_calls）
+    result = await doc_gen(temp_state, temp_config)
+
+    # doc_gen 完成后，提取写入的 doc 路径
+    doc_path = ""
+    for msg in reversed(result.get("messages", [])):
+        if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
+            for tc in msg.tool_calls or []:
+                if tc["name"] == "write_file":
+                    fp = tc["args"].get("file_path", "")
+                    if fp.endswith(".md") and fp != "task.md":
+                        doc_path = fp
+                        break
+        if doc_path:
+            break
+
+    logger.info("doc_gen_worker 完成：%s → %s", file_path, doc_path)
+    return {"generated_doc_paths": [doc_path] if doc_path else []}
+
+
+async def synthesize_overview(state: State, config: RunnableConfig) -> dict:
+    """读取所有生成的文档，汇总写入项目级 overview.md。"""
+    project_name = ""
+    for fp in state.get("task_file_paths", []):
+        if "/" in fp:
+            project_name = fp.split("/")[0]
+            break
+
+    if not project_name:
+        return {"messages": [AIMessage(content="项目概览生成失败：无法确定项目名称")]}
+
+    overview_path = Path(settings.docs_space_dir) / project_name / "overview.md"
+    sections: list[str] = [f"# {project_name} 项目概览\n"]
+
+    # 读取 task.md 获取项目结构信息
+    task_path = Path(settings.docs_space_dir) / project_name / "task.md"
+    if task_path.exists():
+        sections.append(task_path.read_text(encoding="utf-8"))
+        sections.append("\n---\n\n## 已生成的文档列表\n")
+    else:
+        sections.append("\n## 已生成的文档列表\n")
+
+    # 读取各生成的文档，提取标题
+    for doc_fp in state.get("generated_doc_paths", []):
+        full_path = Path(settings.docs_space_dir) / doc_fp
+        if full_path.exists():
+            content = full_path.read_text(encoding="utf-8")
+            first_line = content.split("\n")[0].lstrip("# ").strip()
+            sections.append(f"- [{first_line}]({doc_fp})\n")
+
+    overview_content = "".join(sections)
+    overview_path.parent.mkdir(parents=True, exist_ok=True)
+    overview_path.write_text(overview_content, encoding="utf-8")
+
+    logger.info("项目概览已生成：%s", overview_path)
+    return {
+        "messages": [
+            AIMessage(
+                content=f"项目文档已全部生成，共 {len(state.get('generated_doc_paths', []))} 个文件。"
+                f"概览已保存至 {project_name}/overview.md"
+            )
+        ]
+    }

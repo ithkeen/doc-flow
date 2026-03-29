@@ -17,12 +17,16 @@ from src.graph.nodes import (
     State,
     chat,
     doc_gen,
+    doc_gen_dispatcher,
+    doc_gen_worker,
     doc_qa,
     intent_recognize,
     project_explore,
     route_by_intent,
     route_doc_gen,
+    route_doc_gen_dispatcher,
     route_project_explore,
+    synthesize_overview,
 )
 
 
@@ -46,6 +50,9 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
     graph.add_node("chat", chat)
     graph.add_node("project_explore", project_explore)
     graph.add_node("explore_tools", ToolNode(tools=EXPLORE_TOOLS))
+    graph.add_node("doc_gen_dispatcher", doc_gen_dispatcher)
+    graph.add_node("doc_gen_worker", doc_gen_worker)
+    graph.add_node("synthesize_overview", synthesize_overview)
 
     graph.add_edge(START, "intent_recognize")
     graph.add_conditional_edges(
@@ -53,10 +60,18 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
     )
     graph.add_conditional_edges("doc_gen", route_doc_gen, ["doc_gen_tools", END])
     graph.add_edge("doc_gen_tools", "doc_gen")
+    # project_explore ReAct loop: explore_tools → project_explore → ... → doc_gen_dispatcher
     graph.add_conditional_edges(
-        "project_explore", route_project_explore, ["explore_tools", END]
+        "project_explore", route_project_explore, ["explore_tools", "doc_gen_dispatcher"]
     )
     graph.add_edge("explore_tools", "project_explore")
+    # dispatcher 解析 task.md，Send fan-out 到 doc_gen_worker
+    graph.add_conditional_edges(
+        "doc_gen_dispatcher", route_doc_gen_dispatcher, ["doc_gen_worker"]
+    )
+    # workers 完成后汇总
+    graph.add_edge("doc_gen_worker", "synthesize_overview")
+    graph.add_edge("synthesize_overview", END)
     graph.add_edge("doc_qa", END)
     graph.add_edge("chat", END)
 
