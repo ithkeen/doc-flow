@@ -34,24 +34,36 @@ langgraph dev
 ### Graph Flow (src/graph/graph.py)
 
 ```
-START → intent_recognize → route_by_intent → [doc_qa | doc_gen | chat] → END
+START → intent_recognize → route_by_intent → [doc_qa | doc_gen | chat | project_explore] → END
                                                   │
                                           doc_gen ←→ doc_gen_tools (ReAct loop)
+                                          project_explore ←→ explore_tools (ReAct loop)
+                                          project_explore → doc_gen_dispatcher → [doc_gen_worker × N] → synthesize_overview → END
 ```
 
 - `intent_recognize` parses LLM output as JSON to extract `{"intent": "..."}`, with regex stripping of markdown code fences
-- `doc_gen` binds 8 tools to the LLM and loops with `ToolNode` until no more tool calls
-- `route_by_intent` and `route_doc_gen` are conditional edge functions (not nodes)
+- `doc_gen` and `project_explore` are created by `_make_react_node()` factory, each binding different tool sets
+- `route_by_intent`, `route_doc_gen`, `route_project_explore`, `route_doc_gen_dispatcher` are conditional edge functions (not nodes)
+- `doc_gen_dispatcher` reads `task.md` (written by `project_explore`) and extracts source file paths
+- `route_doc_gen_dispatcher` uses LangGraph `Send` fan-out to parallelize `doc_gen_worker` instances, one per file
+- `synthesize_overview` aggregates all generated docs into a project-level `overview.md`
 
 ### State
 
-`State` (TypedDict): `messages` (Annotated list with `add_messages` reducer) + `intent` (str). All nodes receive `(state, config)` and return partial state dicts.
+`State` (TypedDict): `messages` (Annotated list with `add_messages` reducer) + `intent` (str) + `task_file_paths` + `generated_doc_paths`. All nodes receive `(state, config)` and return partial state dicts.
+
+`DocGenWorkerState` (TypedDict): subgraph state for parallel `doc_gen_worker` invocations — includes `file_path` (input) and `generated_doc_path` (output). The worker uses a singleton `CompiledStateGraph` (built by `build_doc_gen_react_graph()`) invoked per file via `Send` fan-out.
 
 ### Two Directory Spaces
 
 The system operates on two external directories configured via env vars:
-- **`CODE_SPACE_DIR`**: Go source code root — tools `read_file`, `find_function`, `find_struct`, `match_api_name` read from here
-- **`DOCS_SPACE_DIR`**: Documentation output root — tools `write_file`, `load_docgen_config` operate here; `scripts/index_docs.py` indexes .md files from here into Chroma
+- **`CODE_SPACE_DIR`**: Go source code root — tools `read_file`, `find_function`, `find_struct`, `match_api_name`, `find_files`, `list_directory` read from here
+- **`DOCS_SPACE_DIR`**: Documentation output root — tools `write_file`, `load_docgen_config` operate here; `scripts/index_docs.py` indexes .md files from here into Chroma; `project_explore` writes `task.md` here
+
+### Tool Sets
+
+- **`DOC_GEN_TOOLS`** (8 tools): `load_docgen_config`, `match_api_name`, `query_api_index`, `read_file`, `find_function`, `find_struct`, `write_file`, `save_api_index`
+- **`EXPLORE_TOOLS`** (7 tools): `list_directory`, `find_files`, `read_file`, `find_function`, `find_struct`, `load_docgen_config`, `write_file`
 
 ### Tool Response Convention
 
@@ -69,7 +81,7 @@ The DB-backed tools (`save_api_index`, `query_api_index`) use `ToolException` wi
 
 ### Prompt System (src/prompts/)
 
-Prompts are markdown files in `system/{name}.md` and `user/{name}.md`. `load_prompt(name)` reads both (either optional, but at least one required) and returns a `ChatPromptTemplate`. Current prompt names: `intent`, `doc_qa`, `doc_gen`, `chat`.
+Prompts are markdown files in `system/{name}.md` and `user/{name}.md`. `load_prompt(name)` reads both (either optional, but at least one required) and returns a `ChatPromptTemplate`. Current prompt names: `intent`, `doc_qa`, `doc_gen`, `chat`, `project_explore`.
 
 ### Configuration (src/config/)
 
