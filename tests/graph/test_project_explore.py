@@ -80,7 +80,7 @@ class TestRouteProjectExplore:
         msg = AIMessage(content="探索完成")
         state = {"messages": [msg]}
 
-        assert route_project_explore(state) == END
+        assert route_project_explore(state) == "doc_gen_dispatcher"
 
 
 class TestRouteByIntent:

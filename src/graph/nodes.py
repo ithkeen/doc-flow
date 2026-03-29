@@ -16,6 +16,9 @@ from langchain_core.runnables import RunnableConfig
 from typing_extensions import TypedDict
 from langgraph.graph import END
 from langgraph.graph.message import add_messages
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.graph import START, StateGraph
+from langgraph.prebuilt import ToolNode
 from langgraph.types import Send
 
 from src.config import settings
@@ -49,6 +52,19 @@ class State(TypedDict):
     """待生成文档的源码文件路径列表（从 task.md 解析）。"""
     generated_doc_paths: Annotated[list[str], operator.add]
     """各 worker 生成的文档文件路径列表（累积）。"""
+
+
+class DocGenWorkerState(TypedDict):
+    """doc_gen_worker 子图专用状态。"""
+
+    messages: Annotated[list, add_messages]
+    """消息历史，ReAct 循环使用。"""
+    intent: str
+    """固定为 "doc_gen"。"""
+    file_path: str
+    """待生成文档的源码文件路径。"""
+    generated_doc_path: str
+    """生成的文档文件路径（单文件），由 doc_gen 工具写入后填充。"""
 
 
 async def intent_recognize(state: State, config: RunnableConfig) -> dict:
@@ -199,7 +215,19 @@ doc_gen = _make_react_node("doc_gen", DOC_GEN_TOOLS)
 project_explore = _make_react_node("project_explore", EXPLORE_TOOLS)
 
 
-def _make_tool_router(tool_node_name: str):
+def _make_tool_router(tool_node_name: str, fallthrough: str = "doc_gen_dispatcher"):
+    """创建工具路由函数：有 tool_calls 则路由到工具节点，否则路由到 fallthrough。"""
+
+    def router(state: State) -> str:
+        last_message = state["messages"][-1]
+        if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+            return tool_node_name
+        return fallthrough
+
+    return router
+
+
+def _make_tool_router_end(tool_node_name: str):
     """创建工具路由函数：有 tool_calls 则路由到工具节点，否则结束。"""
 
     def router(state: State) -> str:
@@ -211,8 +239,8 @@ def _make_tool_router(tool_node_name: str):
     return router
 
 
-route_doc_gen = _make_tool_router("doc_gen_tools")
-route_project_explore = _make_tool_router("explore_tools")
+route_doc_gen = _make_tool_router_end("doc_gen_tools")
+route_project_explore = _make_tool_router("explore_tools", "doc_gen_dispatcher")
 
 
 # ---------------------------------------------------------------------------
@@ -284,53 +312,83 @@ async def doc_gen_dispatcher(state: State, config: RunnableConfig) -> dict:
 
 
 def route_doc_gen_dispatcher(state: State) -> list[Send]:
-    """Send fan-out：有待处理文件时，为每个文件创建 Send 到 doc_gen_worker。"""
+    """Send fan-out：有待处理文件时，为每个文件创建 Send 到 doc_gen_worker。无可处理文件时路由到 synthesize_overview。"""
     file_paths = state.get("task_file_paths", [])
     if not file_paths:
-        return []
+        return ["synthesize_overview"]
     return [Send("doc_gen_worker", {"file_path": fp}) for fp in file_paths]
+
+
+def _route_doc_gen_end(state: DocGenWorkerState) -> str:
+    """doc_gen 子图专用路由：有 tool_calls 则继续执行工具，否则结束。"""
+    last_message = state["messages"][-1]
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        return "doc_gen_tools"
+    return END
+
+
+def build_doc_gen_react_graph() -> CompiledStateGraph:
+    """构建 doc_gen ReAct 子图，供 doc_gen_worker 并行调用。"""
+    from src.graph.graph import build_graph as _build_main_graph
+
+    builder = StateGraph(DocGenWorkerState)
+    builder.add_node("doc_gen", doc_gen)
+    builder.add_node("doc_gen_tools", ToolNode(tools=DOC_GEN_TOOLS))
+    builder.add_edge(START, "doc_gen")
+    builder.add_conditional_edges("doc_gen", _route_doc_gen_end, ["doc_gen_tools", END])
+    builder.add_edge("doc_gen_tools", "doc_gen")
+    return builder.compile()
+
+
+# 模块级缓存子图编译结果
+_doc_gen_react_graph: CompiledStateGraph | None = None
+
+
+def _get_doc_gen_react_graph() -> CompiledStateGraph:
+    """返回单例 doc_gen ReAct 子图。"""
+    global _doc_gen_react_graph
+    if _doc_gen_react_graph is None:
+        _doc_gen_react_graph = build_doc_gen_react_graph()
+    return _doc_gen_react_graph
 
 
 async def doc_gen_worker(state: State, config: RunnableConfig) -> dict:
     """单个文件生成文档 worker（由 Send 并行调用）。
 
-    Send 传递 {"file_path": ...}，本函数构造提示消息并调用 doc_gen ReAct 循环。
-    返回 generated_doc_paths 以累积到主状态。
+    调用 doc_gen ReAct 子图处理单个文件，返回生成的文档路径供父状态累积。
     """
     file_path = state.get("file_path", "")  # type: ignore[index]
     if not file_path:
         return {"generated_doc_paths": []}
 
-    project_name = file_path.split("/")[0] if "/" in file_path else ""
     user_input = f"生成 {file_path} 的文档"
 
-    # 构造提示消息，复用 doc_gen prompt 格式
-    synthetic_msg = HumanMessage(content=user_input)
-
-    # 临时状态，仅含 messages（其他 key 由调用方管理）
-    temp_state: State = {
-        "messages": [synthetic_msg],
+    # 构造子图初始状态
+    worker_initial: DocGenWorkerState = {
+        "messages": [HumanMessage(content=user_input)],
         "intent": "doc_gen",
-        "task_file_paths": [],
-        "generated_doc_paths": [],
+        "file_path": file_path,
+        "generated_doc_path": "",
     }
-    temp_config: RunnableConfig = {"configurable": config.get("configurable", {})}
 
-    # 复用 doc_gen node 函数（内部 ToolNode 循环直到无 tool_calls）
-    result = await doc_gen(temp_state, temp_config)
+    # 调用子图，执行完整 ReAct 循环
+    sub_config: RunnableConfig = {"configurable": config.get("configurable", {})}
+    sub_result = await _get_doc_gen_react_graph().ainvoke(worker_initial, sub_config)
 
-    # doc_gen 完成后，提取写入的 doc 路径
-    doc_path = ""
-    for msg in reversed(result.get("messages", [])):
-        if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
-            for tc in msg.tool_calls or []:
-                if tc["name"] == "write_file":
-                    fp = tc["args"].get("file_path", "")
-                    if fp.endswith(".md") and fp != "task.md":
-                        doc_path = fp
-                        break
-        if doc_path:
-            break
+    # 从子图结果提取生成的文档路径
+    doc_path = sub_result.get("generated_doc_path", "")
+    if not doc_path:
+        # 兜底：从 messages 中查找 write_file 调用记录
+        for msg in reversed(sub_result.get("messages", [])):
+            if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
+                for tc in getattr(msg, "tool_calls", []) or []:
+                    if tc.get("name") == "write_file":
+                        fp = tc.get("args", {}).get("file_path", "")
+                        if fp and fp.endswith(".md") and "task.md" not in fp:
+                            doc_path = fp
+                            break
+            if doc_path:
+                break
 
     logger.info("doc_gen_worker 完成：%s → %s", file_path, doc_path)
     return {"generated_doc_paths": [doc_path] if doc_path else []}
