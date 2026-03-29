@@ -18,7 +18,6 @@ from src.graph.nodes import (
     chat,
     doc_gen,
     doc_gen_dispatcher,
-    doc_gen_worker,
     doc_qa,
     intent_recognize,
     project_explore,
@@ -51,7 +50,6 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
     graph.add_node("project_explore", project_explore)
     graph.add_node("explore_tools", ToolNode(tools=EXPLORE_TOOLS))
     graph.add_node("doc_gen_dispatcher", doc_gen_dispatcher)
-    graph.add_node("doc_gen_worker", doc_gen_worker)
     graph.add_node("synthesize_overview", synthesize_overview)
 
     graph.add_edge(START, "intent_recognize")
@@ -65,12 +63,8 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
         "project_explore", route_project_explore, ["explore_tools", "doc_gen_dispatcher"]
     )
     graph.add_edge("explore_tools", "project_explore")
-    # dispatcher 解析 task.md，Send fan-out 到 doc_gen_worker；无可处理文件时路由到 synthesize_overview
-    graph.add_conditional_edges(
-        "doc_gen_dispatcher", route_doc_gen_dispatcher, ["doc_gen_worker", "synthesize_overview"]
-    )
-    # workers 完成后汇总
-    graph.add_edge("doc_gen_worker", "synthesize_overview")
+    # dispatcher 顺序派发任务，完成后直接汇总
+    graph.add_edge("doc_gen_dispatcher", "synthesize_overview")
     graph.add_edge("synthesize_overview", END)
     graph.add_edge("doc_qa", END)
     graph.add_edge("chat", END)

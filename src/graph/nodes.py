@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import operator
 import re
@@ -111,10 +112,6 @@ DOC_GEN_TOOLS = [
 
 EXPLORE_TOOLS = [
     list_directory,
-    find_files,
-    read_file,
-    find_function,
-    find_struct,
     load_docgen_config,
     write_file,
 ]
@@ -279,9 +276,10 @@ def _read_task_file(project_name: str) -> tuple[str, list[str]]:
 
 
 async def doc_gen_dispatcher(state: State, config: RunnableConfig) -> dict:
-    """读取 project_explore 输出的 task.md，提取源码文件路径写入 state。
+    """读取 project_explore 输出的 task.md，顺序派发文档生成任务（间隔 5s）。
 
-    解析 task.md 提取所有源码文件路径，写入 task_file_paths 供后续 Send fan-out 使用。
+    解析 task.md 提取所有源码文件路径，逐个调用 doc_gen ReAct 子图生成文档，
+    每次调用间隔 5 秒以避免频繁请求。
     """
     logger.info("doc_gen_dispatcher 开始解析 task.md")
 
@@ -300,7 +298,7 @@ async def doc_gen_dispatcher(state: State, config: RunnableConfig) -> dict:
 
     if not task_file_path:
         logger.warning("未找到 task.md 写入记录，跳过 dispatch")
-        return {"task_file_paths": []}
+        return {"generated_doc_paths": []}
 
     # 提取项目名：task_file_path 格式 "{项目名}/task.md"
     project_name = task_file_path.replace("/task.md", "").split("/")[0]
@@ -308,15 +306,46 @@ async def doc_gen_dispatcher(state: State, config: RunnableConfig) -> dict:
     _, file_paths = _read_task_file(project_name)
     logger.info("从 task.md 解析到 %d 个待生成文件", len(file_paths))
 
-    return {"task_file_paths": file_paths}
-
-
-def route_doc_gen_dispatcher(state: State) -> list[Send]:
-    """Send fan-out：有待处理文件时，为每个文件创建 Send 到 doc_gen_worker。无可处理文件时路由到 synthesize_overview。"""
-    file_paths = state.get("task_file_paths", [])
     if not file_paths:
-        return ["synthesize_overview"]
-    return [Send("doc_gen_worker", {"file_path": fp}) for fp in file_paths]
+        return {"generated_doc_paths": []}
+
+    # 顺序调用子图生成文档，间隔 5 秒
+    all_doc_paths: list[str] = []
+    sub_config: RunnableConfig = {"configurable": config.get("configurable", {})}
+
+    for i, fp in enumerate(file_paths):
+        logger.info("正在生成文档 [%d/%d]: %s", i + 1, len(file_paths), fp)
+        user_input = f"生成 {fp} 的文档"
+        worker_initial: DocGenWorkerState = {
+            "messages": [HumanMessage(content=user_input)],
+            "intent": "doc_gen",
+            "file_path": fp,
+            "generated_doc_path": "",
+        }
+        sub_result = await _get_doc_gen_react_graph().ainvoke(worker_initial, sub_config)
+        doc_path = sub_result.get("generated_doc_path", "")
+        if not doc_path:
+            for msg in reversed(sub_result.get("messages", [])):
+                if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
+                    for tc in getattr(msg, "tool_calls", []) or []:
+                        if tc["name"] == "write_file":
+                            doc_path = tc["args"].get("file_path", "") or ""
+                            break
+                if doc_path:
+                    break
+        if doc_path:
+            all_doc_paths.append(doc_path)
+        # 间隔 5 秒，避免频繁请求
+        if i < len(file_paths) - 1:
+            await asyncio.sleep(5)
+
+    logger.info("doc_gen_dispatcher 完成，共生成 %d 个文档", len(all_doc_paths))
+    return {"generated_doc_paths": all_doc_paths}
+
+
+def route_doc_gen_dispatcher(state: State) -> str:
+    """doc_gen_dispatcher 完成顺序派发后，直接路由到 synthesize_overview 汇总。"""
+    return "synthesize_overview"
 
 
 def _route_doc_gen_end(state: DocGenWorkerState) -> str:
