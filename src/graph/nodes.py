@@ -188,6 +188,7 @@ async def doc_qa(state: State, config: RunnableConfig) -> dict:
     prompt = load_prompt("doc_qa")
     user_input = _get_last_human_message(state["messages"])
     retrieval_plan = state.get("retrieval_plan", [])
+    logger.info("retrieval_plan 内容：%s", retrieval_plan)
 
     # 无 retrieval_plan 时 fallback 到空检索（graceful degradation）
     if not retrieval_plan:

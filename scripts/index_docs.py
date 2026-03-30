@@ -92,6 +92,12 @@ def main() -> None:
         type=str,
         help="索引单个文件（相对于 docs_space_dir 的路径）",
     )
+    parser.add_argument(
+        "--dir",
+        type=str,
+        dest="sub_dir",
+        help="索引指定子目录下的所有文档（相对于 docs_space_dir 的路径）",
+    )
     args = parser.parse_args()
 
     docs_dir = Path(settings.docs_space_dir)
@@ -102,6 +108,12 @@ def main() -> None:
     if args.file:
         file_path = collect_single_file(args.file, docs_dir)
         files = [file_path]
+    elif args.sub_dir:
+        target_dir = docs_dir / args.sub_dir
+        if not target_dir.exists():
+            print(f"子目录不存在: {target_dir}", file=sys.stderr)
+            sys.exit(1)
+        files = collect_md_files(target_dir)
     else:
         files = collect_md_files(docs_dir)
 

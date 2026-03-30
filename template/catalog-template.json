@@ -1,0 +1,31 @@
+{
+  "catalog": [
+    {
+      "project": {
+        "name": "项目名称",
+        "description": "项目的整体介绍，包括项目的主要功能、技术架构、适用场景等"
+      },
+      "services": [
+        {
+          "name": "服务/模块名称",
+          "description": "模块的详细介绍，包括功能范围、职责边界、与其它模块的关系",
+          "match_rules": [
+            {
+              "type": "keywords",
+              "values": ["关键词1", "关键词2", "关键词3"]
+            },
+            {
+              "type": "semantic",
+              "description": "语义描述，用于向量检索时的参考"
+            }
+          ],
+          "typical_queries": [
+            "典型问题1",
+            "典型问题2",
+            "典型问题3"
+          ]
+        }
+      ]
+    }
+  ]
+}

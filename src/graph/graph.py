@@ -55,7 +55,7 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
 
     graph.add_edge(START, "intent_recognize")
     graph.add_conditional_edges(
-        "intent_recognize", route_by_intent, ["doc_qa", "doc_gen", "chat", "project_explore", "doc_gen_dispatcher", END]
+        "intent_recognize", route_by_intent, ["query_planning", "doc_gen", "chat", "project_explore", "doc_gen_dispatcher", END]
     )
     graph.add_conditional_edges("doc_gen", route_doc_gen, ["doc_gen_tools", END])
     graph.add_edge("doc_gen_tools", "doc_gen")

@@ -24,6 +24,7 @@ pytest tests/graph/test_doc_qa.py::test_doc_qa_retrieves_docs_and_injects_contex
 # Index docs into Chroma vector store
 python scripts/index_docs.py                        # all docs
 python scripts/index_docs.py --file proj/mod/Api.md # single file
+python scripts/index_docs.py --dir ubill-access-api # index a sub-directory
 
 # LangGraph Studio
 langgraph dev
@@ -34,7 +35,7 @@ langgraph dev
 ### Graph Flow (src/graph/graph.py)
 
 ```
-START → intent_recognize → route_by_intent → [doc_qa | doc_gen | chat | project_explore | batch_doc_gen] → END
+START → intent_recognize → route_by_intent → [query_planning → doc_qa | doc_gen | chat | project_explore | batch_doc_gen] → END
                                                   │
                                           doc_gen ←→ doc_gen_tools (ReAct loop)
                                           project_explore ←→ explore_tools (ReAct loop)
@@ -43,14 +44,16 @@ START → intent_recognize → route_by_intent → [doc_qa | doc_gen | chat | pr
 ```
 
 - `intent_recognize` parses LLM output as JSON to extract `{"intent": "..."}`, with regex stripping of markdown code fences
+- `route_by_intent` routes doc_qa to `query_planning`, others to their respective nodes
+- `query_planning` analyzes user question against Catalog and generates a structured `retrieval_plan` (list of retrieval units with project, service, search_strategy, search_query)
 - `doc_gen` and `project_explore` are created by `_make_react_node()` factory, each binding different tool sets
-- `route_by_intent` routes to [doc_qa | doc_gen | chat | project_explore | batch_doc_gen]; `route_doc_gen` and `route_project_explore` are conditional edge functions that route into ReAct subgraphs
+- `route_doc_gen` and `route_project_explore` are conditional edge functions that route into ReAct subgraphs
 - `doc_gen_dispatcher` reads `task.md` (written by `project_explore`) or uses `task_file_path` directly (standalone batch mode), then sequentially invokes the doc_gen ReAct subgraph per file with 5s intervals to avoid rate limits, returning `generated_doc_paths` directly
 - `synthesize_overview` aggregates all generated docs into a project-level `overview.md`
 
 ### State
 
-`State` (TypedDict): `messages` (Annotated list with `add_messages` reducer) + `intent` (str) + `task_file_path` (standalone batch mode) + `task_file_paths` + `generated_doc_paths`. All nodes receive `(state, config)` and return partial state dicts.
+`State` (TypedDict): `messages` (Annotated list with `add_messages` reducer) + `intent` (str) + `task_file_path` (standalone batch mode) + `task_file_paths` + `generated_doc_paths` + `retrieval_plan` (Annotated list, accumulated across query_planning → doc_qa). All nodes receive `(state, config)` and return partial state dicts.
 
 `DocGenWorkerState` (TypedDict): subgraph state for doc_gen ReAct invocations — includes `file_path` (input) and `generated_doc_path` (output). The singleton `CompiledStateGraph` (built by `build_doc_gen_react_graph()`) is invoked directly by `doc_gen_dispatcher` for each file sequentially.
 
@@ -75,13 +78,14 @@ The DB-backed tools (`save_api_index`, `query_api_index`) use `ToolException` wi
 
 ### RAG Pipeline (src/rag/)
 
-- `get_retriever()` returns a cached Chroma retriever (top-k=3)
-- `doc_qa` node gracefully degrades to empty context if retrieval fails
+- `HybridRetriever` combines vector search (Chroma) + BM25 keyword search, with deduplication
+- `doc_qa` executes multi-way retrieval per `retrieval_plan` unit, gracefully degrades to empty context on failure
+- `catalog/index.json` provides project/service metadata for query planning
 - Embeddings reuse the same `LLM_BASE_URL`/`LLM_API_KEY` with `LLM_EMBED_MODEL`
 
 ### Prompt System (src/prompts/)
 
-Prompts are markdown files in `system/{name}.md` and `user/{name}.md`. `load_prompt(name)` reads both (either optional, but at least one required) and returns a `ChatPromptTemplate`. Current prompt names: `intent`, `doc_qa`, `doc_gen`, `chat`, `project_explore`, `batch_doc_gen`.
+Prompts are markdown files in `system/{name}.md` and `user/{name}.md`. `load_prompt(name)` reads both (either optional, but at least one required) and returns a `ChatPromptTemplate`. Current prompt names: `intent`, `doc_qa`, `doc_gen`, `chat`, `project_explore`, `batch_doc_gen`, `query_planning`.
 
 ### Configuration (src/config/)
 
