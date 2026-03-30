@@ -340,8 +340,10 @@ async def doc_gen_dispatcher(state: State, config: RunnableConfig) -> dict:
                 if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
                     for tc in getattr(msg, "tool_calls", []) or []:
                         if tc["name"] == "write_file":
-                            doc_path = tc["args"].get("file_path", "") or ""
-                            break
+                            fp = tc["args"].get("file_path", "") or ""
+                            if fp and fp.endswith(".md") and "task.md" not in fp:
+                                doc_path = fp
+                                break
                 if doc_path:
                     break
         if doc_path:
