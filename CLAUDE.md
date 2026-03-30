@@ -38,21 +38,20 @@ START → intent_recognize → route_by_intent → [doc_qa | doc_gen | chat | pr
                                                   │
                                           doc_gen ←→ doc_gen_tools (ReAct loop)
                                           project_explore ←→ explore_tools (ReAct loop)
-                                          project_explore → doc_gen_dispatcher → [doc_gen_worker × N] → synthesize_overview → END
+                                          project_explore → doc_gen_dispatcher → synthesize_overview → END
 ```
 
 - `intent_recognize` parses LLM output as JSON to extract `{"intent": "..."}`, with regex stripping of markdown code fences
 - `doc_gen` and `project_explore` are created by `_make_react_node()` factory, each binding different tool sets
-- `route_by_intent`, `route_doc_gen`, `route_project_explore`, `route_doc_gen_dispatcher` are conditional edge functions (not nodes)
-- `doc_gen_dispatcher` reads `task.md` (written by `project_explore`) and extracts source file paths
-- `route_doc_gen_dispatcher` uses LangGraph `Send` fan-out to parallelize `doc_gen_worker` instances, one per file
+- `route_by_intent`, `route_doc_gen`, `route_project_explore` are conditional edge functions (not nodes)
+- `doc_gen_dispatcher` reads `task.md` (written by `project_explore`), then sequentially invokes the doc_gen ReAct subgraph per file with 5s intervals to avoid rate limits, returning `generated_doc_paths` directly
 - `synthesize_overview` aggregates all generated docs into a project-level `overview.md`
 
 ### State
 
 `State` (TypedDict): `messages` (Annotated list with `add_messages` reducer) + `intent` (str) + `task_file_paths` + `generated_doc_paths`. All nodes receive `(state, config)` and return partial state dicts.
 
-`DocGenWorkerState` (TypedDict): subgraph state for parallel `doc_gen_worker` invocations — includes `file_path` (input) and `generated_doc_path` (output). The worker uses a singleton `CompiledStateGraph` (built by `build_doc_gen_react_graph()`) invoked per file via `Send` fan-out.
+`DocGenWorkerState` (TypedDict): subgraph state for doc_gen ReAct invocations — includes `file_path` (input) and `generated_doc_path` (output). The singleton `CompiledStateGraph` (built by `build_doc_gen_react_graph()`) is invoked directly by `doc_gen_dispatcher` for each file sequentially.
 
 ### Two Directory Spaces
 
@@ -63,7 +62,7 @@ The system operates on two external directories configured via env vars:
 ### Tool Sets
 
 - **`DOC_GEN_TOOLS`** (8 tools): `load_docgen_config`, `match_api_name`, `query_api_index`, `read_file`, `find_function`, `find_struct`, `write_file`, `save_api_index`
-- **`EXPLORE_TOOLS`** (7 tools): `list_directory`, `find_files`, `read_file`, `find_function`, `find_struct`, `load_docgen_config`, `write_file`
+- **`EXPLORE_TOOLS`** (3 tools): `list_directory`, `load_docgen_config`, `write_file`
 
 ### Tool Response Convention
 
