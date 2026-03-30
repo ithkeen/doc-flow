@@ -43,6 +43,14 @@ from src.tools import (
 logger = get_logger(__name__)
 
 
+def load_catalog() -> str:
+    """加载 Catalog JSON 内容，供 query_planning 使用。"""
+    catalog_path = Path(settings.docs_space_dir) / "catalog" / "index.json"
+    if not catalog_path.exists():
+        return "{}"
+    return catalog_path.read_text(encoding="utf-8")
+
+
 class State(TypedDict):
     """图的共享状态。"""
 
@@ -56,6 +64,8 @@ class State(TypedDict):
     """待生成文档的源码文件路径列表（从 task.md 解析）。"""
     generated_doc_paths: Annotated[list[str], operator.add]
     """各 worker 生成的文档文件路径列表（累积）。"""
+    retrieval_plan: Annotated[list, operator.add]
+    """doc_qa 检索规划节点输出的结构化检索计划。"""
 
 
 class DocGenWorkerState(TypedDict):
@@ -104,6 +114,40 @@ async def intent_recognize(state: State, config: RunnableConfig) -> dict:
     return {"intent": intent, "task_file_path": task_file_path}
 
 
+async def query_planning(state: State, config: RunnableConfig) -> dict:
+    """检索规划节点。
+
+    分析用户问题，参考 Catalog，输出结构化 retrieval_plan。
+    """
+    prompt = load_prompt("query_planning")
+    user_input = _get_last_human_message(state["messages"])
+    catalog_content = load_catalog()
+
+    system_messages = prompt.format_messages(
+        user_question=user_input,
+        catalog_content=catalog_content,
+    )
+
+    llm = get_llm("intent")
+    response = await llm.ainvoke(system_messages, config=config)
+
+    raw = response.content
+    # 解析 JSON
+    try:
+        # 尝试从 markdown code fence 中提取
+        m = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", raw, re.DOTALL)
+        if m:
+            raw = m.group(1)
+        parsed = json.loads(raw)
+        retrieval_plan = parsed.get("retrieval_plan", [])
+    except (json.JSONDecodeError, ValueError):
+        logger.warning("retrieval_plan 解析失败，原始内容：%s", response.content)
+        retrieval_plan = []
+
+    logger.info("query_planning 完成，retrieval_plan 条目数：%d", len(retrieval_plan))
+    return {"retrieval_plan": retrieval_plan}
+
+
 DOC_GEN_TOOLS = [
     load_docgen_config,
     match_api_name,
@@ -133,28 +177,47 @@ def _get_last_human_message(messages: list) -> str:
 async def doc_qa(state: State, config: RunnableConfig) -> dict:
     """文档问答节点。
 
-    从 Chroma 向量库检索相关文档，注入 prompt 上下文，生成回答。
+    按 retrieval_plan 执行多路混合检索，生成回答。
     """
+    from langchain_core.documents import Document
+    from src.rag.hybrid_retriever import HybridRetriever
+
     prompt = load_prompt("doc_qa")
     user_input = _get_last_human_message(state["messages"])
+    retrieval_plan = state.get("retrieval_plan", [])
 
-    # 向量检索（失败时降级为空上下文）
-    try:
-        retriever = get_retriever()
-        docs = await retriever.ainvoke(user_input)
-        context = format_retrieved_docs(docs)
-    except Exception:
-        logger.exception("文档检索失败，使用空上下文")
+    # 无 retrieval_plan 时 fallback 到空检索（graceful degradation）
+    if not retrieval_plan:
         context = ""
+    else:
+        retriever = HybridRetriever(top_k=5)
+        all_docs: list[Document] = []
+        for unit in retrieval_plan:
+            docs = retriever.invoke(
+                query=unit.get("search_query", user_input),
+                project=unit.get("project"),
+                service=unit.get("service"),
+                strategy=unit.get("search_strategy", "hybrid"),
+            )
+            all_docs.extend(docs)
 
-    # context 注入 prompt
+        # 按 source + section 去重，保持顺序
+        seen: set[str] = set()
+        unique_docs: list[Document] = []
+        for doc in all_docs:
+            key = doc.metadata.get("source", "") + doc.metadata.get("section", "")
+            if key not in seen:
+                seen.add(key)
+                unique_docs.append(doc)
+
+        context = format_retrieved_docs(unique_docs)
+
     system_messages = prompt.format_messages(
         user_input=user_input,
         context=context,
     )
 
     llm = get_llm("doc_qa")
-
     all_messages = system_messages + state["messages"]
     response = await llm.ainvoke(all_messages, config=config)
 
