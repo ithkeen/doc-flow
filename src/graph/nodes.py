@@ -91,9 +91,14 @@ async def intent_recognize(state: State, config: RunnableConfig) -> dict:
     try:
         parsed = json.loads(raw)
         intent = parsed.get("intent", "unknown")
+        task_file_path = parsed.get("task_file_path", "")
     except (json.JSONDecodeError, ValueError):
         logger.warning("意图识别结果解析失败，原始内容：%s", response.content)
         intent = "unknown"
+        task_file_path = ""
+
+    if task_file_path:
+        config["configurable"]["task_file_path"] = task_file_path
 
     logger.info("意图识别完成：intent=%s", intent)
     return {"intent": intent}
