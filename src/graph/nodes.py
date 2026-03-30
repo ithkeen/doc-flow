@@ -192,14 +192,18 @@ async def doc_qa(state: State, config: RunnableConfig) -> dict:
     else:
         retriever = HybridRetriever(top_k=5)
         all_docs: list[Document] = []
-        for unit in retrieval_plan:
-            docs = retriever.invoke(
-                query=unit.get("search_query", user_input),
-                project=unit.get("project"),
-                service=unit.get("service"),
-                strategy=unit.get("search_strategy", "hybrid"),
-            )
-            all_docs.extend(docs)
+        try:
+            for unit in retrieval_plan:
+                docs = retriever.invoke(
+                    query=unit.get("search_query", user_input),
+                    project=unit.get("project"),
+                    service=unit.get("service"),
+                    strategy=unit.get("search_strategy", "hybrid"),
+                )
+                all_docs.extend(docs)
+        except Exception:
+            logger.exception("检索失败，使用空上下文")
+            all_docs = []
 
         # 按 source + section 去重，保持顺序
         seen: set[str] = set()

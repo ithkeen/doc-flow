@@ -20,6 +20,18 @@ def mock_state():
     return {
         "messages": [HumanMessage(content="GetUser 接口的参数是什么？")],
         "intent": "doc_qa",
+        "task_file_path": "",
+        "task_file_paths": [],
+        "generated_doc_paths": [],
+        "retrieval_plan": [
+            {
+                "project": "proj",
+                "service": "mod",
+                "information_types": ["parameters"],
+                "search_strategy": "hybrid",
+                "search_query": "GetUser 接口参数"
+            }
+        ],
     }
 
 
@@ -33,24 +45,27 @@ async def test_doc_qa_retrieves_docs_and_injects_context(mock_state, mock_config
     fake_docs = [
         Document(
             page_content="# GetUser\n\nParameters: user_id (int)",
-            metadata={"source": "proj/mod/GetUser.md"},
+            metadata={"source": "proj/mod/GetUser.md", "section": "parameters"},
         )
     ]
-    mock_retriever = AsyncMock()
-    mock_retriever.ainvoke.return_value = fake_docs
 
     mock_llm = AsyncMock()
     mock_llm.ainvoke.return_value = AIMessage(content="GetUser 接口的参数是 user_id")
 
-    with patch("src.graph.nodes.get_retriever", return_value=mock_retriever), \
+    with patch("src.rag.hybrid_retriever.HybridRetriever") as mock_hr_class, \
          patch("src.graph.nodes.get_llm", return_value=mock_llm):
+        mock_hr_instance = MagicMock()
+        mock_hr_instance.invoke.return_value = fake_docs
+        mock_hr_class.return_value = mock_hr_instance
+
         from src.graph.nodes import doc_qa
         result = await doc_qa(mock_state, mock_config)
 
-    # Retriever was called with user question
-    mock_retriever.ainvoke.assert_called_once_with(
-        "GetUser 接口的参数是什么？"
-    )
+    # HybridRetriever.invoke was called with the search query from retrieval_plan
+    mock_hr_instance.invoke.assert_called_once()
+    call_kwargs = mock_hr_instance.invoke.call_args[1]
+    assert call_kwargs["project"] == "proj"
+    assert call_kwargs["service"] == "mod"
 
     # LLM was called with messages containing the context
     call_args = mock_llm.ainvoke.call_args
@@ -65,14 +80,15 @@ async def test_doc_qa_retrieves_docs_and_injects_context(mock_state, mock_config
 
 async def test_doc_qa_handles_empty_retrieval(mock_state, mock_config):
     """doc_qa works gracefully when no docs are found."""
-    mock_retriever = AsyncMock()
-    mock_retriever.ainvoke.return_value = []
-
     mock_llm = AsyncMock()
     mock_llm.ainvoke.return_value = AIMessage(content="文档库中暂无相关内容")
 
-    with patch("src.graph.nodes.get_retriever", return_value=mock_retriever), \
+    with patch("src.rag.hybrid_retriever.HybridRetriever") as mock_hr_class, \
          patch("src.graph.nodes.get_llm", return_value=mock_llm):
+        mock_hr_instance = MagicMock()
+        mock_hr_instance.invoke.return_value = []
+        mock_hr_class.return_value = mock_hr_instance
+
         from src.graph.nodes import doc_qa
         result = await doc_qa(mock_state, mock_config)
 
@@ -82,14 +98,15 @@ async def test_doc_qa_handles_empty_retrieval(mock_state, mock_config):
 
 async def test_doc_qa_handles_retriever_failure(mock_state, mock_config):
     """doc_qa returns graceful response when retriever fails."""
-    mock_retriever = AsyncMock()
-    mock_retriever.ainvoke.side_effect = Exception("Chroma unavailable")
-
     mock_llm = AsyncMock()
     mock_llm.ainvoke.return_value = AIMessage(content="文档库中暂无相关内容")
 
-    with patch("src.graph.nodes.get_retriever", return_value=mock_retriever), \
+    with patch("src.rag.hybrid_retriever.HybridRetriever") as mock_hr_class, \
          patch("src.graph.nodes.get_llm", return_value=mock_llm):
+        mock_hr_instance = MagicMock()
+        mock_hr_instance.invoke.side_effect = Exception("Chroma unavailable")
+        mock_hr_class.return_value = mock_hr_instance
+
         from src.graph.nodes import doc_qa
         result = await doc_qa(mock_state, mock_config)
 
