@@ -42,13 +42,16 @@ from src.tools import (
 
 logger = get_logger(__name__)
 
+_JSON_CODE_FENCE_RE = r"```(?:json)?\s*\n?(.*?)\n?\s*```"
+
 
 def load_catalog() -> str:
     """加载 Catalog JSON 内容，供 query_planning 使用。"""
     catalog_path = Path(settings.docs_space_dir) / "catalog" / "index.json"
-    if not catalog_path.exists():
+    try:
+        return catalog_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return "{}"
-    return catalog_path.read_text(encoding="utf-8")
 
 
 class State(TypedDict):
@@ -135,7 +138,7 @@ async def query_planning(state: State, config: RunnableConfig) -> dict:
     # 解析 JSON
     try:
         # 尝试从 markdown code fence 中提取
-        m = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", raw, re.DOTALL)
+        m = re.search(_JSON_CODE_FENCE_RE, raw, re.DOTALL)
         if m:
             raw = m.group(1)
         parsed = json.loads(raw)
@@ -286,7 +289,7 @@ doc_gen = _make_react_node("doc_gen", DOC_GEN_TOOLS)
 project_explore = _make_react_node("project_explore", EXPLORE_TOOLS)
 
 
-def _make_tool_router(tool_node_name: str, fallthrough: str = "doc_gen_dispatcher"):
+def _make_tool_router(tool_node_name: str, fallthrough: str = END):
     """创建工具路由函数：有 tool_calls 则路由到工具节点，否则路由到 fallthrough。"""
 
     def router(state: State) -> str:
@@ -298,19 +301,7 @@ def _make_tool_router(tool_node_name: str, fallthrough: str = "doc_gen_dispatche
     return router
 
 
-def _make_tool_router_end(tool_node_name: str):
-    """创建工具路由函数：有 tool_calls 则路由到工具节点，否则结束。"""
-
-    def router(state: State) -> str:
-        last_message = state["messages"][-1]
-        if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-            return tool_node_name
-        return END
-
-    return router
-
-
-route_doc_gen = _make_tool_router_end("doc_gen_tools")
+route_doc_gen = _make_tool_router("doc_gen_tools")
 route_project_explore = _make_tool_router("explore_tools", "doc_gen_dispatcher")
 
 

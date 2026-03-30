@@ -75,14 +75,11 @@ class HybridRetriever(BaseRetriever):
         retriever = _get_bm25_retriever()
         all_results = retriever.invoke(query)
         if project or service:
-            filtered = []
-            for doc in all_results:
-                if project and doc.metadata.get("project") != project:
-                    continue
-                if service and doc.metadata.get("service") != service:
-                    continue
-                filtered.append(doc)
-            return filtered
+            return [
+                doc for doc in all_results
+                if (not project or doc.metadata.get("project") == project)
+                and (not service or doc.metadata.get("service") == service)
+            ]
         return all_results
 
     def _get_relevant_documents(
