@@ -23,7 +23,6 @@ from src.graph.nodes import (
     project_explore,
     route_by_intent,
     route_doc_gen,
-    route_doc_gen_dispatcher,
     route_project_explore,
     synthesize_overview,
 )
@@ -54,7 +53,7 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
 
     graph.add_edge(START, "intent_recognize")
     graph.add_conditional_edges(
-        "intent_recognize", route_by_intent, ["doc_qa", "doc_gen", "chat", "project_explore", END]
+        "intent_recognize", route_by_intent, ["doc_qa", "doc_gen", "chat", "project_explore", "doc_gen_dispatcher", END]
     )
     graph.add_conditional_edges("doc_gen", route_doc_gen, ["doc_gen_tools", END])
     graph.add_edge("doc_gen_tools", "doc_gen")

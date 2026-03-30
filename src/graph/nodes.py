@@ -56,7 +56,7 @@ class State(TypedDict):
 
 
 class DocGenWorkerState(TypedDict):
-    """doc_gen_worker 子图专用状态。"""
+    """doc_gen_dispatcher 调用子图时的状态。"""
 
     messages: Annotated[list, add_messages]
     """消息历史，ReAct 循环使用。"""
@@ -356,11 +356,6 @@ async def doc_gen_dispatcher(state: State, config: RunnableConfig) -> dict:
     return {"generated_doc_paths": all_doc_paths}
 
 
-def route_doc_gen_dispatcher(state: State) -> str:
-    """doc_gen_dispatcher 完成顺序派发后，直接路由到 synthesize_overview 汇总。"""
-    return "synthesize_overview"
-
-
 def _route_doc_gen_end(state: DocGenWorkerState) -> str:
     """doc_gen 子图专用路由：有 tool_calls 则继续执行工具，否则结束。"""
     last_message = state["messages"][-1]
@@ -370,7 +365,7 @@ def _route_doc_gen_end(state: DocGenWorkerState) -> str:
 
 
 def build_doc_gen_react_graph() -> CompiledStateGraph:
-    """构建 doc_gen ReAct 子图，供 doc_gen_worker 并行调用。"""
+    """构建 doc_gen ReAct 子图，供 doc_gen_dispatcher 顺序调用。"""
     from src.graph.graph import build_graph as _build_main_graph
 
     builder = StateGraph(DocGenWorkerState)
@@ -392,48 +387,6 @@ def _get_doc_gen_react_graph() -> CompiledStateGraph:
     if _doc_gen_react_graph is None:
         _doc_gen_react_graph = build_doc_gen_react_graph()
     return _doc_gen_react_graph
-
-
-async def doc_gen_worker(state: State, config: RunnableConfig) -> dict:
-    """单个文件生成文档 worker（由 Send 并行调用）。
-
-    调用 doc_gen ReAct 子图处理单个文件，返回生成的文档路径供父状态累积。
-    """
-    file_path = state.get("file_path", "")  # type: ignore[index]
-    if not file_path:
-        return {"generated_doc_paths": []}
-
-    user_input = f"生成 {file_path} 的文档"
-
-    # 构造子图初始状态
-    worker_initial: DocGenWorkerState = {
-        "messages": [HumanMessage(content=user_input)],
-        "intent": "doc_gen",
-        "file_path": file_path,
-        "generated_doc_path": "",
-    }
-
-    # 调用子图，执行完整 ReAct 循环
-    sub_config: RunnableConfig = {"configurable": config.get("configurable", {})}
-    sub_result = await _get_doc_gen_react_graph().ainvoke(worker_initial, sub_config)
-
-    # 从子图结果提取生成的文档路径
-    doc_path = sub_result.get("generated_doc_path", "")
-    if not doc_path:
-        # 兜底：从 messages 中查找 write_file 调用记录
-        for msg in reversed(sub_result.get("messages", [])):
-            if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
-                for tc in getattr(msg, "tool_calls", []) or []:
-                    if tc.get("name") == "write_file":
-                        fp = tc.get("args", {}).get("file_path", "")
-                        if fp and fp.endswith(".md") and "task.md" not in fp:
-                            doc_path = fp
-                            break
-            if doc_path:
-                break
-
-    logger.info("doc_gen_worker 完成：%s → %s", file_path, doc_path)
-    return {"generated_doc_paths": [doc_path] if doc_path else []}
 
 
 async def synthesize_overview(state: State, config: RunnableConfig) -> dict:
