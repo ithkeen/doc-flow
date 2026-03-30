@@ -27,3 +27,6 @@ chainlit.md
 
 # Chroma vector store data
 data/chroma/
+
+# Worktrees
+.worktrees/
