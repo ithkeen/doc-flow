@@ -20,6 +20,7 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
 from src.config import settings
+from src.rag.chunker import chunk_markdown_doc, chunks_to_documents
 from src.rag.embeddings import get_embeddings
 
 
@@ -65,10 +66,17 @@ def index_files(files: list[Path], docs_dir: Path) -> None:
     for file_path in files:
         content = file_path.read_text(encoding="utf-8")
         metadata = build_metadata(file_path, docs_dir)
-        doc_id = metadata["source"]
+        project = metadata["project"]
+        service = metadata["module"]
 
-        docs.append(Document(page_content=content, metadata=metadata))
-        ids.append(doc_id)
+        # 分块索引
+        chunks = chunk_markdown_doc(content, str(file_path.relative_to(docs_dir)), project, service)
+        chunk_docs = chunks_to_documents(chunks)
+
+        for chunk_doc in chunk_docs:
+            doc_id = f"{chunk_doc.metadata['source']}#{chunk_doc.metadata['section']}"
+            docs.append(chunk_doc)
+            ids.append(doc_id)
 
     if docs:
         vectorstore.add_documents(documents=docs, ids=ids)
