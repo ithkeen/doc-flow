@@ -73,8 +73,8 @@ def index_files(files: list[Path], docs_dir: Path) -> None:
         chunks = chunk_markdown_doc(content, str(file_path.relative_to(docs_dir)), project, service)
         chunk_docs = chunks_to_documents(chunks)
 
-        for chunk_doc in chunk_docs:
-            doc_id = f"{chunk_doc.metadata['source']}#{chunk_doc.metadata['section']}"
+        for i, chunk_doc in enumerate(chunk_docs):
+            doc_id = f"{chunk_doc.metadata['source']}#{chunk_doc.metadata['section']}#{i}"
             docs.append(chunk_doc)
             ids.append(doc_id)
 
