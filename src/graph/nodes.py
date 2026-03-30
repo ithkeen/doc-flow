@@ -99,6 +99,7 @@ async def intent_recognize(state: State, config: RunnableConfig) -> dict:
 
     if task_file_path:
         config["configurable"]["task_file_path"] = task_file_path
+        logger.info("intent_recognize 提取到 task_file_path=%s", task_file_path)
 
     logger.info("意图识别完成：intent=%s", intent)
     return {"intent": intent}
@@ -293,6 +294,8 @@ async def doc_gen_dispatcher(state: State, config: RunnableConfig) -> dict:
 
     # 优先从 config 读取（standalone 模式）
     task_file_path = config.get("configurable", {}).get("task_file_path", "")
+    if task_file_path:
+        logger.info("从 config 读取到 task_file_path=%s", task_file_path)
 
     # 如果 config 中没有，尝试从 messages 中查找（graph flow 模式）
     if not task_file_path:
@@ -311,8 +314,11 @@ async def doc_gen_dispatcher(state: State, config: RunnableConfig) -> dict:
         logger.warning("未找到 task.md，跳过 dispatch")
         return {"generated_doc_paths": []}
 
-    # 提取项目名：task_file_path 格式 "{项目名}/task.md"
-    project_name = task_file_path.replace("/task.md", "").split("/")[0]
+    # 提取项目名：task_file_path 格式 "{项目名}/{task_file_name}"
+    # project_name 是 task_file_path 的第二层目录（从右数第二段）
+    parts = task_file_path.split("/")
+    project_name = parts[-2] if len(parts) >= 2 else parts[0]
+    logger.info("task_file_path=%s, project_name=%s", task_file_path, project_name)
 
     _, file_paths = _read_task_file(project_name)
     logger.info("从 task.md 解析到 %d 个待生成文件", len(file_paths))
