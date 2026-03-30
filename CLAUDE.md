@@ -34,22 +34,23 @@ langgraph dev
 ### Graph Flow (src/graph/graph.py)
 
 ```
-START → intent_recognize → route_by_intent → [doc_qa | doc_gen | chat | project_explore] → END
+START → intent_recognize → route_by_intent → [doc_qa | doc_gen | chat | project_explore | batch_doc_gen] → END
                                                   │
                                           doc_gen ←→ doc_gen_tools (ReAct loop)
                                           project_explore ←→ explore_tools (ReAct loop)
                                           project_explore → doc_gen_dispatcher → synthesize_overview → END
+                                          batch_doc_gen → doc_gen_dispatcher → END
 ```
 
 - `intent_recognize` parses LLM output as JSON to extract `{"intent": "..."}`, with regex stripping of markdown code fences
 - `doc_gen` and `project_explore` are created by `_make_react_node()` factory, each binding different tool sets
-- `route_by_intent`, `route_doc_gen`, `route_project_explore` are conditional edge functions (not nodes)
-- `doc_gen_dispatcher` reads `task.md` (written by `project_explore`), then sequentially invokes the doc_gen ReAct subgraph per file with 5s intervals to avoid rate limits, returning `generated_doc_paths` directly
+- `route_by_intent` routes to [doc_qa | doc_gen | chat | project_explore | batch_doc_gen]; `route_doc_gen` and `route_project_explore` are conditional edge functions that route into ReAct subgraphs
+- `doc_gen_dispatcher` reads `task.md` (written by `project_explore`) or uses `task_file_path` directly (standalone batch mode), then sequentially invokes the doc_gen ReAct subgraph per file with 5s intervals to avoid rate limits, returning `generated_doc_paths` directly
 - `synthesize_overview` aggregates all generated docs into a project-level `overview.md`
 
 ### State
 
-`State` (TypedDict): `messages` (Annotated list with `add_messages` reducer) + `intent` (str) + `task_file_paths` + `generated_doc_paths`. All nodes receive `(state, config)` and return partial state dicts.
+`State` (TypedDict): `messages` (Annotated list with `add_messages` reducer) + `intent` (str) + `task_file_path` (standalone batch mode) + `task_file_paths` + `generated_doc_paths`. All nodes receive `(state, config)` and return partial state dicts.
 
 `DocGenWorkerState` (TypedDict): subgraph state for doc_gen ReAct invocations — includes `file_path` (input) and `generated_doc_path` (output). The singleton `CompiledStateGraph` (built by `build_doc_gen_react_graph()`) is invoked directly by `doc_gen_dispatcher` for each file sequentially.
 
@@ -80,7 +81,7 @@ The DB-backed tools (`save_api_index`, `query_api_index`) use `ToolException` wi
 
 ### Prompt System (src/prompts/)
 
-Prompts are markdown files in `system/{name}.md` and `user/{name}.md`. `load_prompt(name)` reads both (either optional, but at least one required) and returns a `ChatPromptTemplate`. Current prompt names: `intent`, `doc_qa`, `doc_gen`, `chat`, `project_explore`.
+Prompts are markdown files in `system/{name}.md` and `user/{name}.md`. `load_prompt(name)` reads both (either optional, but at least one required) and returns a `ChatPromptTemplate`. Current prompt names: `intent`, `doc_qa`, `doc_gen`, `chat`, `project_explore`, `batch_doc_gen`.
 
 ### Configuration (src/config/)
 
