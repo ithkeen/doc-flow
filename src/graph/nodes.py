@@ -285,26 +285,30 @@ def _read_task_file(project_name: str) -> tuple[str, list[str]]:
 async def doc_gen_dispatcher(state: State, config: RunnableConfig) -> dict:
     """读取 project_explore 输出的 task.md，顺序派发文档生成任务（间隔 5s）。
 
-    解析 task.md 提取所有源码文件路径，逐个调用 doc_gen ReAct 子图生成文档，
-    每次调用间隔 5 秒以避免频繁请求。
+    支持两种模式：
+    1. Standalone：从 config["configurable"]["task_file_path"] 读取任务文件路径
+    2. Graph flow：从 project_explore 的 tool_calls 中找到写入的 task.md 路径
     """
     logger.info("doc_gen_dispatcher 开始解析 task.md")
 
-    # 从 project_explore 的 tool_calls 中找到写入的 task.md 路径
-    task_file_path = ""
-    for msg in reversed(state["messages"]):
-        if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
-            for tc in msg.tool_calls or []:
-                if tc["name"] == "write_file":
-                    fp = tc["args"].get("file_path", "")
-                    if "task.md" in fp:
-                        task_file_path = fp
-                        break
-        if task_file_path:
-            break
+    # 优先从 config 读取（standalone 模式）
+    task_file_path = config.get("configurable", {}).get("task_file_path", "")
+
+    # 如果 config 中没有，尝试从 messages 中查找（graph flow 模式）
+    if not task_file_path:
+        for msg in reversed(state["messages"]):
+            if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
+                for tc in msg.tool_calls or []:
+                    if tc["name"] == "write_file":
+                        fp = tc["args"].get("file_path", "")
+                        if "task.md" in fp:
+                            task_file_path = fp
+                            break
+            if task_file_path:
+                break
 
     if not task_file_path:
-        logger.warning("未找到 task.md 写入记录，跳过 dispatch")
+        logger.warning("未找到 task.md，跳过 dispatch")
         return {"generated_doc_paths": []}
 
     # 提取项目名：task_file_path 格式 "{项目名}/task.md"
