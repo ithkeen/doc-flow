@@ -6,9 +6,9 @@
 - doc_gen：用户要求生成 API 文档（如"帮我生成 xxx 的接口文档"、"生成 xxx.go 的 API 文档"）
 - project_explore：用户想要探索分析一个项目的结构，了解项目有哪些服务、API、定时任务或消息订阅（如"探索 ubill-access-api 项目"、"分析 xxx 项目结构"）
 - doc_qa：用户基于已有文档提问（查询接口参数、用法、错误码等）
-- batch_doc_gen：用户要求根据一个任务文件批量生成文档（如"根据 xxx/task.md 生成文档"、"根据某个任务文件生成一批文档"）
+- batch_doc_gen：用户要求根据一个任务文件批量生成文档（如"根据 xxx/task.md 生成文档"、"根据 oa-request-task/task.bak.md 生成文档"、"基于某个任务文件生成一批文档"）
 - chat：用户的输入不属于以上意图，是一般性对话、闲聊、问候、技术讨论或其他内容
 
 请以 JSON 格式输出你的判断结果，包含以下字段：
 - intent: 识别出的意图类别
-- task_file_path: 从用户输入中提取的任务文件路径（如 "proj/task.md"），仅当 intent 为 batch_doc_gen 时需要此字段
+- task_file_path: 从用户输入中提取的任务文件路径（如 "proj/task.md"），**直接使用用户输入中的原始路径，不要更正或替换文件名**，仅当 intent 为 batch_doc_gen 时需要此字段
