@@ -21,6 +21,7 @@ from src.graph.nodes import (
     doc_qa,
     intent_recognize,
     project_explore,
+    query_planning,
     route_by_intent,
     route_doc_gen,
     route_project_explore,
@@ -42,6 +43,7 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
     graph = StateGraph(State)
 
     graph.add_node("intent_recognize", intent_recognize)
+    graph.add_node("query_planning", query_planning)
     graph.add_node("doc_qa", doc_qa)
     graph.add_node("doc_gen", doc_gen)
     graph.add_node("doc_gen_tools", ToolNode(tools=DOC_GEN_TOOLS))
@@ -65,6 +67,7 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
     # dispatcher 顺序派发任务，完成后直接汇总
     graph.add_edge("doc_gen_dispatcher", "synthesize_overview")
     graph.add_edge("synthesize_overview", END)
+    graph.add_edge("query_planning", "doc_qa")
     graph.add_edge("doc_qa", END)
     graph.add_edge("chat", END)
 

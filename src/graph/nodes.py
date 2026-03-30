@@ -248,7 +248,7 @@ async def chat(state: State, config: RunnableConfig) -> dict:
 def route_by_intent(state: State) -> str:
     """根据意图识别结果路由到对应节点。"""
     if state["intent"] == "doc_qa":
-        return "doc_qa"
+        return "query_planning"
     if state["intent"] == "doc_gen":
         return "doc_gen"
     if state["intent"] == "chat":
