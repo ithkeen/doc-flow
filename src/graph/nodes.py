@@ -192,6 +192,8 @@ def route_by_intent(state: State) -> str:
         return "chat"
     if state["intent"] == "project_explore":
         return "project_explore"
+    if state["intent"] == "batch_doc_gen":
+        return "doc_gen_dispatcher"
     return END
 
 

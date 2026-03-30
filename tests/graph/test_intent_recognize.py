@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from src.graph.nodes import intent_recognize, State
+from src.graph.nodes import intent_recognize, route_by_intent, State
 
 
 @pytest.mark.asyncio
@@ -26,3 +26,11 @@ async def test_intent_recognize_batch_doc_gen_extracts_task_file_path():
 
     assert result["intent"] == "batch_doc_gen"
     assert config["configurable"]["task_file_path"] == "ubill-access-api/task.md"
+
+
+def test_route_by_intent_batch_doc_gen():
+    """route_by_intent returns 'doc_gen_dispatcher' for batch_doc_gen intent."""
+    from src.graph.nodes import route_by_intent
+
+    state = {"intent": "batch_doc_gen"}
+    assert route_by_intent(state) == "doc_gen_dispatcher"
