@@ -48,6 +48,9 @@ class State(TypedDict):
 
     messages: Annotated[list, add_messages]
     intent: str
+    # batch_doc_gen standalone: 任务文件路径
+    task_file_path: str
+    """batch_doc_gen 模式下任务文件的原始路径（如 'proj/task.md'）。"""
     # project_explore dispatch fields
     task_file_paths: Annotated[list[str], operator.add]
     """待生成文档的源码文件路径列表（从 task.md 解析）。"""
@@ -97,12 +100,8 @@ async def intent_recognize(state: State, config: RunnableConfig) -> dict:
         intent = "unknown"
         task_file_path = ""
 
-    if task_file_path:
-        config["configurable"]["task_file_path"] = task_file_path
-        logger.info("intent_recognize 提取到 task_file_path=%s", task_file_path)
-
-    logger.info("意图识别完成：intent=%s", intent)
-    return {"intent": intent}
+    logger.info("意图识别完成：intent=%s, task_file_path=%s", intent, task_file_path)
+    return {"intent": intent, "task_file_path": task_file_path}
 
 
 DOC_GEN_TOOLS = [
@@ -287,17 +286,17 @@ async def doc_gen_dispatcher(state: State, config: RunnableConfig) -> dict:
     """读取 project_explore 输出的 task.md，顺序派发文档生成任务（间隔 5s）。
 
     支持两种模式：
-    1. Standalone：从 config["configurable"]["task_file_path"] 读取任务文件路径
+    1. Standalone：从 state["task_file_path"] 读取（intent_recognize 写入门）
     2. Graph flow：从 project_explore 的 tool_calls 中找到写入的 task.md 路径
     """
     logger.info("doc_gen_dispatcher 开始解析 task.md")
 
-    # 优先从 config 读取（standalone 模式）
-    task_file_path = config.get("configurable", {}).get("task_file_path", "")
+    # 优先从 state 读取（standalone 模式，intent_recognize 写入）
+    task_file_path = state.get("task_file_path", "")
     if task_file_path:
-        logger.info("从 config 读取到 task_file_path=%s", task_file_path)
+        logger.info("从 state 读取到 task_file_path=%s", task_file_path)
 
-    # 如果 config 中没有，尝试从 messages 中查找（graph flow 模式）
+    # 如果 state 中没有，尝试从 messages 中查找（graph flow 模式）
     if not task_file_path:
         for msg in reversed(state["messages"]):
             if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):

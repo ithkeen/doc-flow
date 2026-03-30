@@ -5,10 +5,11 @@ from src.graph.nodes import intent_recognize, route_by_intent, State
 
 @pytest.mark.asyncio
 async def test_intent_recognize_batch_doc_gen_extracts_task_file_path():
-    """intent_recognize extracts task_file_path and stores it in config."""
+    """intent_recognize extracts task_file_path and returns it in state."""
     state: State = {
         "messages": [MagicMock(content="根据 ubill-access-api/task.md 生成文档")],
         "intent": "",
+        "task_file_path": "",
         "task_file_paths": [],
         "generated_doc_paths": [],
     }
@@ -25,12 +26,10 @@ async def test_intent_recognize_batch_doc_gen_extracts_task_file_path():
         result = await intent_recognize(state, config)
 
     assert result["intent"] == "batch_doc_gen"
-    assert config["configurable"]["task_file_path"] == "ubill-access-api/task.md"
+    assert result["task_file_path"] == "ubill-access-api/task.md"
 
 
 def test_route_by_intent_batch_doc_gen():
     """route_by_intent returns 'doc_gen_dispatcher' for batch_doc_gen intent."""
-    from src.graph.nodes import route_by_intent
-
     state = {"intent": "batch_doc_gen"}
     assert route_by_intent(state) == "doc_gen_dispatcher"

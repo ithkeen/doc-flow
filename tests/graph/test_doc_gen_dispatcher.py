@@ -15,10 +15,11 @@ if "mysql" not in sys.modules:
 
 @pytest.fixture
 def mock_state():
-    """State with no messages (standalone mode)."""
+    """State with task_file_path for standalone mode."""
     return {
         "messages": [],
         "intent": "batch_doc_gen",
+        "task_file_path": "test-project/task.md",
         "task_file_paths": [],
         "generated_doc_paths": [],
     }
@@ -26,12 +27,8 @@ def mock_state():
 
 @pytest.fixture
 def mock_config():
-    """Config with task_file_path for standalone mode."""
-    return {
-        "configurable": {
-            "task_file_path": "test-project/task.md"
-        }
-    }
+    """Config for standalone mode (task_file_path now in state, not config)."""
+    return {"configurable": {}}
 
 
 @pytest.mark.asyncio
